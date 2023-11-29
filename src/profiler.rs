@@ -1,7 +1,5 @@
 use super::GPUHandle;
 use std::collections::HashMap;
-use tabled::settings::{object::Rows, Alignment, Modify, Panel, Style};
-use tabled::{Table, Tabled};
 use wgpu::QuerySet;
 
 pub struct Profiler {
@@ -10,8 +8,6 @@ pub struct Profiler {
     resolve_buffer: wgpu::Buffer,
     destination_buffer: wgpu::Buffer,
     query_index: u32,
-    timestamp_period: f32,
-    query_to_node: HashMap<(u32, u32), (usize, String)>,
 }
 
 impl Profiler {
@@ -21,7 +17,6 @@ impl Profiler {
             ty: wgpu::QueryType::Timestamp,
             label: Some("PerfTimestamps"),
         });
-        let timestamp_period = handle.queue().get_timestamp_period();
 
         let buffer_size = (count as usize * 2 * std::mem::size_of::<u64>()) as u64;
         let resolve_buffer = handle.device().create_buffer(&wgpu::BufferDescriptor {
@@ -44,16 +39,10 @@ impl Profiler {
             resolve_buffer,
             destination_buffer,
             query_index: 0,
-            timestamp_period,
-            query_to_node: HashMap::with_capacity(count as usize),
         }
     }
 
-    pub fn create_timestamp_queries(
-        &mut self,
-        id: usize,
-        name: &str,
-    ) -> wgpu::ComputePassTimestampWrites {
+    pub fn create_timestamp_query(&mut self) -> wgpu::ComputePassTimestampWrites {
         let beginning_index = self.query_index;
         self.query_index += 1;
         let end_index = self.query_index;
@@ -64,9 +53,6 @@ impl Profiler {
             beginning_of_pass_write_index: Some(beginning_index),
             end_of_pass_write_index: Some(end_index),
         };
-
-        self.query_to_node
-            .insert((beginning_index, end_index), (id, name.to_string()));
 
         timestamp_writes
     }
