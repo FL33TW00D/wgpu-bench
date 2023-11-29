@@ -53,6 +53,9 @@ pub struct WgpuTimer {
     query_index: Cell<u32>,
 }
 
+unsafe impl Send for WgpuTimer {}
+unsafe impl Sync for WgpuTimer {}
+
 impl WgpuTimer {
     pub fn new(handle: GPUHandle) -> Self {
         let query_set = handle.device().create_query_set(&wgpu::QuerySetDescriptor {
@@ -96,6 +99,10 @@ impl WgpuTimer {
             pair.size(),
         );
     }
+
+    pub fn handle(&self) -> &GPUHandle {
+        &self.handle
+    }
 }
 
 impl Measurement for WgpuTimer {
@@ -119,16 +126,17 @@ impl Measurement for WgpuTimer {
             .slice(..)
             .map_async(wgpu::MapMode::Read, |_| ());
         self.handle.device().poll(wgpu::Maintain::Wait);
-        let timestamp_view = self
-            .destination_buffer
-            .slice(
-                i.start as u64..(std::mem::size_of::<u64>() as u32 * i.end) as wgpu::BufferAddress,
-            )
-            .get_mapped_range();
+        let timestamps = {
+            println!("Mapping: {:?}", i);
+            let timestamp_view = self
+                .destination_buffer
+                .slice(i.start_addr()..i.end_addr())
+                .get_mapped_range();
 
-        let timestamps: &[u64] = bytemuck::cast_slice(&timestamp_view);
-        let [start, end] = timestamps.try_into().unwrap();
-        end - start // this isn't right
+            (*bytemuck::cast_slice(&timestamp_view)).to_vec()
+        };
+        self.destination_buffer.unmap();
+        timestamps[0]
     }
 
     fn add(&self, v1: &Self::Value, v2: &Self::Value) -> Self::Value {

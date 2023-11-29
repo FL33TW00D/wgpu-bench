@@ -14,7 +14,26 @@ where
     (0..elements).map(|_| dist.sample(&mut rng)).collect()
 }
 
-fn rand_gpu_buffer<F: Float + bytemuck::Pod>(handle: &GPUHandle, elements: usize) -> wgpu::Buffer
+pub fn empty_buffer<F: Float + bytemuck::Pod>(
+    device: &wgpu::Device,
+    elements: usize,
+) -> wgpu::Buffer
+where
+    Standard: Distribution<F>,
+    F: SampleUniform,
+{
+    let data = vec![F::zero(); elements];
+    device.create_buffer_init(&wgpu::util::BufferInitDescriptor {
+        label: None,
+        contents: bytemuck::cast_slice(&data),
+        usage: wgpu::BufferUsages::STORAGE | wgpu::BufferUsages::COPY_SRC,
+    })
+}
+
+pub fn rand_gpu_buffer<F: Float + bytemuck::Pod>(
+    handle: &GPUHandle,
+    elements: usize,
+) -> wgpu::Buffer
 where
     Standard: Distribution<F>,
     F: SampleUniform,
