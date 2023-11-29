@@ -3,7 +3,7 @@ mod handle;
 mod profiler;
 mod shape;
 
-use std::cell::Cell;
+use std::{cell::Cell, ops::Range};
 
 pub use data::*;
 pub use handle::*;
@@ -16,18 +16,86 @@ use criterion::{
 };
 use wgpu::QuerySet;
 
+pub const MAX_QUERIES: u32 = 512;
+
 /// Start and end index in the counter sample buffer
+#[derive(Debug, Clone, Copy)]
 pub struct TimerPair {
     pub start: u32,
     pub end: u32,
 }
 
+impl TimerPair {
+    pub fn start_addr(&self) -> wgpu::BufferAddress {
+        self.start as u64 * std::mem::size_of::<u64>() as wgpu::BufferAddress
+    }
+
+    pub fn end_addr(&self) -> wgpu::BufferAddress {
+        self.end as u64 * std::mem::size_of::<u64>() as wgpu::BufferAddress
+    }
+
+    pub fn size(&self) -> wgpu::BufferAddress {
+        ((self.end - self.start) as usize * std::mem::size_of::<u64>()) as wgpu::BufferAddress
+    }
+}
+
+impl Into<Range<u32>> for TimerPair {
+    fn into(self) -> Range<u32> {
+        self.start..self.end
+    }
+}
+
 pub struct WgpuTimer {
     handle: GPUHandle,
     query_set: QuerySet,
-    resolve_buffer: wgpu::Buffer,
+    query_buffer: wgpu::Buffer,
     destination_buffer: wgpu::Buffer,
     query_index: Cell<u32>,
+}
+
+impl WgpuTimer {
+    pub fn new(handle: GPUHandle) -> Self {
+        let query_set = handle.device().create_query_set(&wgpu::QuerySetDescriptor {
+            count: MAX_QUERIES,
+            ty: wgpu::QueryType::Timestamp,
+            label: None,
+        });
+
+        let size = (MAX_QUERIES as usize * 2 * std::mem::size_of::<u64>()) as wgpu::BufferAddress;
+
+        let query_buffer = handle.device().create_buffer(&wgpu::BufferDescriptor {
+            label: None,
+            size,
+            usage: wgpu::BufferUsages::COPY_SRC | wgpu::BufferUsages::QUERY_RESOLVE,
+            mapped_at_creation: false,
+        });
+
+        let destination_buffer = handle.device().create_buffer(&wgpu::BufferDescriptor {
+            label: None,
+            size,
+            usage: wgpu::BufferUsages::COPY_DST | wgpu::BufferUsages::MAP_READ,
+            mapped_at_creation: false,
+        });
+
+        Self {
+            handle,
+            query_set,
+            query_buffer,
+            destination_buffer,
+            query_index: 0.into(),
+        }
+    }
+
+    pub fn resolve_pair(&self, encoder: &mut wgpu::CommandEncoder, pair: TimerPair) {
+        encoder.resolve_query_set(&self.query_set, pair.into(), &self.query_buffer, 0);
+        encoder.copy_buffer_to_buffer(
+            &self.query_buffer,
+            pair.start_addr(),
+            &self.destination_buffer,
+            pair.end_addr(),
+            pair.size(),
+        );
+    }
 }
 
 impl Measurement for WgpuTimer {
@@ -60,7 +128,7 @@ impl Measurement for WgpuTimer {
 
         let timestamps: &[u64] = bytemuck::cast_slice(&timestamp_view);
         let [start, end] = timestamps.try_into().unwrap();
-        end - start // is this right?
+        end - start // this isn't right
     }
 
     fn add(&self, v1: &Self::Value, v2: &Self::Value) -> Self::Value {
@@ -76,7 +144,7 @@ impl Measurement for WgpuTimer {
     }
 
     fn formatter(&self) -> &dyn ValueFormatter {
-        todo!()
+        &WgpuTimerFormatter
     }
 }
 
