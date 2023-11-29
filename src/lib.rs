@@ -20,12 +20,16 @@ pub const MAX_QUERIES: u32 = 512;
 
 /// Start and end index in the counter sample buffer
 #[derive(Debug, Clone, Copy)]
-pub struct TimerPair {
+pub struct QueryPair {
     pub start: u32,
     pub end: u32,
 }
 
-impl TimerPair {
+impl QueryPair {
+    pub fn first() -> Self {
+        Self { start: 0, end: 1 }
+    }
+
     pub fn start_addr(&self) -> wgpu::BufferAddress {
         self.start as u64 * std::mem::size_of::<u64>() as wgpu::BufferAddress
     }
@@ -39,7 +43,7 @@ impl TimerPair {
     }
 }
 
-impl Into<Range<u32>> for TimerPair {
+impl Into<Range<u32>> for QueryPair {
     fn into(self) -> Range<u32> {
         self.start..self.end
     }
@@ -50,7 +54,7 @@ pub struct WgpuTimer {
     query_set: QuerySet,
     query_buffer: wgpu::Buffer,
     destination_buffer: wgpu::Buffer,
-    query_index: Cell<u32>,
+    current_query: Cell<QueryPair>,
 }
 
 unsafe impl Send for WgpuTimer {}
@@ -85,11 +89,11 @@ impl WgpuTimer {
             query_set,
             query_buffer,
             destination_buffer,
-            query_index: 0.into(),
+            current_query: QueryPair::first().into(),
         }
     }
 
-    pub fn resolve_pair(&self, encoder: &mut wgpu::CommandEncoder, pair: TimerPair) {
+    pub fn resolve_pair(&self, encoder: &mut wgpu::CommandEncoder, pair: QueryPair) {
         encoder.resolve_query_set(&self.query_set, pair.into(), &self.query_buffer, 0);
         encoder.copy_buffer_to_buffer(
             &self.query_buffer,
@@ -103,22 +107,38 @@ impl WgpuTimer {
     pub fn handle(&self) -> &GPUHandle {
         &self.handle
     }
+
+    pub fn query_set(&self) -> &QuerySet {
+        &self.query_set
+    }
+
+    pub fn timestamp_writes(&self) -> wgpu::ComputePassTimestampWrites {
+        let pair = self.current_query.get();
+        wgpu::ComputePassTimestampWrites {
+            query_set: &self.query_set,
+            beginning_of_pass_write_index: Some(pair.start),
+            end_of_pass_write_index: Some(pair.end),
+        }
+    }
+
+    pub fn increment_query(&self) {
+        let pair = self.current_query.get();
+        self.current_query.set(QueryPair {
+            start: pair.start + 2,
+            end: pair.end + 2,
+        });
+    }
 }
 
-impl Measurement for WgpuTimer {
-    type Intermediate = TimerPair;
+impl Measurement for &WgpuTimer {
+    type Intermediate = QueryPair;
 
     type Value = u64;
 
     fn start(&self) -> Self::Intermediate {
-        let index = self.query_index.get();
-        let beginning_of_pass_write_index = index;
-        let end_of_pass_write_index = index + 1;
-        self.query_index.set(index + 2);
-        TimerPair {
-            start: beginning_of_pass_write_index,
-            end: end_of_pass_write_index,
-        }
+        let start = self.current_query.get();
+        self.increment_query();
+        start
     }
 
     fn end(&self, i: Self::Intermediate) -> Self::Value {
