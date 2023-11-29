@@ -1,6 +1,6 @@
 # wgpu-bencher
 
-Picture this
+Picture this,
 
 You've just finished a sweet new WebGPU kernel you've been working on.
 
@@ -17,5 +17,7 @@ Fear not, you reach for the tried and true `wgpu-bencher` to find out.
 It's 10% slower...
 
 You're devestated.
+
+--
 
 `wgpu-bencher` can bring about your moment of devestation faster than any other lib!
