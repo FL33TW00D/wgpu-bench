@@ -1,30 +1,6 @@
-pub async fn test_harness(
-    workload: Workload,
-    shader: String,
-    dims: (usize, usize, usize),
-    quantize_b: Quantization,
-    trans_b: bool,
-) {
+pub async fn test_harness() {
     let handle = GPUHandle::new().await.unwrap();
     let (M, N, K) = dims;
-
-    let shader_module = unsafe {
-        handle
-            .device()
-            .create_shader_module_unchecked(wgpu::ShaderModuleDescriptor {
-                label: None,
-                source: wgpu::ShaderSource::Wgsl(Cow::Borrowed(&shader)),
-            })
-    };
-
-    let pipeline = handle
-        .device()
-        .create_compute_pipeline(&wgpu::ComputePipelineDescriptor {
-            label: None,
-            layout: None,
-            module: &shader_module,
-            entry_point: "main",
-        });
 
     check(
         &handle,

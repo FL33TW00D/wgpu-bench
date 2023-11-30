@@ -4,17 +4,18 @@ use wgpu::util::DeviceExt;
 
 use crate::GPUHandle;
 
-pub fn generate_weight_data<F: Float + bytemuck::Pod>(elements: usize) -> Vec<F>
+pub fn generate_weight_data<F: Float + bytemuck::Pod + std::fmt::Debug>(elements: usize) -> Vec<F>
 where
     Standard: Distribution<F>,
     F: SampleUniform,
 {
     let mut rng = rand::thread_rng();
     let dist = Uniform::from(F::from(-10.0).unwrap()..F::from(10.0).unwrap());
-    (0..elements).map(|_| dist.sample(&mut rng)).collect()
+    let x: Vec<F> = (0..elements).map(|_| dist.sample(&mut rng)).collect();
+    x
 }
 
-pub fn empty_buffer<F: Float + bytemuck::Pod>(
+pub fn empty_buffer<F: Float + bytemuck::Pod + std::fmt::Debug>(
     device: &wgpu::Device,
     elements: usize,
 ) -> wgpu::Buffer
@@ -30,7 +31,7 @@ where
     })
 }
 
-pub fn rand_gpu_buffer<F: Float + bytemuck::Pod>(
+pub fn rand_gpu_buffer<F: Float + bytemuck::Pod + std::fmt::Debug>(
     handle: &GPUHandle,
     elements: usize,
 ) -> wgpu::Buffer
