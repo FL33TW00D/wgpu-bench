@@ -31,7 +31,7 @@ impl Kernel for LayerNorm {
     }
 
     fn source() -> &'static str {
-        include_str!("../add.wgsl")
+        include_str!("../kernels/add.wgsl")
     }
 
     fn buffers(handle: &GPUHandle) -> Vec<wgpu::Buffer> {
