@@ -125,6 +125,13 @@ impl WgpuTimer {
     }
 }
 
+/// We integrate Criterion with WebGPU by using the TIMESTAMP_QUERY functionality.
+/// We record the time using the GPU counters at the start and end of the benchmark.
+///
+/// Unfortunately, as every iteration of the benchmark requires constructing \& submitting the command buffer,
+/// which incurs overhead, the reported elapsed time will be inaccurate.
+///
+/// However, relative measurements should be accurate, as the overhead is ~constant.
 impl Measurement for &WgpuTimer {
     type Intermediate = (); //query index
 
