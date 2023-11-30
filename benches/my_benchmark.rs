@@ -1,4 +1,3 @@
-#![feature(const_async_blocks)]
 use std::borrow::Cow;
 
 use criterion::{criterion_group, criterion_main, Criterion, Throughput};
