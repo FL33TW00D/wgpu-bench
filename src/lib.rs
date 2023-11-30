@@ -18,7 +18,7 @@ use criterion::{
 };
 use wgpu::QuerySet;
 
-pub const MAX_QUERIES: u32 = 512;
+pub const MAX_QUERIES: u32 = 4096;
 
 /// Start and end index in the counter sample buffer
 #[derive(Debug, Clone, Copy)]
@@ -32,22 +32,14 @@ impl QueryPair {
         Self { start: 0, end: 1 }
     }
 
-    pub fn start_addr(&self) -> wgpu::BufferAddress {
-        self.start as u64 * std::mem::size_of::<u64>() as wgpu::BufferAddress
-    }
-
-    pub fn end_addr(&self) -> wgpu::BufferAddress {
-        self.end as u64 * std::mem::size_of::<u64>() as wgpu::BufferAddress
-    }
-
     pub fn size(&self) -> wgpu::BufferAddress {
-        ((self.end - self.start) as usize * std::mem::size_of::<u64>()) as wgpu::BufferAddress
+        ((self.end - self.start + 1) as usize * std::mem::size_of::<u64>()) as wgpu::BufferAddress
     }
 }
 
 impl Into<Range<u32>> for QueryPair {
     fn into(self) -> Range<u32> {
-        self.start..self.end
+        self.start..self.end + 1
     }
 }
 
@@ -59,6 +51,7 @@ pub struct WgpuTimer {
     current_query: Cell<QueryPair>,
 }
 
+//TODO: dumb
 unsafe impl Send for WgpuTimer {}
 unsafe impl Sync for WgpuTimer {}
 
@@ -70,18 +63,16 @@ impl WgpuTimer {
             label: None,
         });
 
-        let size = (MAX_QUERIES as usize * 2 * std::mem::size_of::<u64>()) as wgpu::BufferAddress;
-
         let resolve_buffer = handle.device().create_buffer(&wgpu::BufferDescriptor {
             label: None,
-            size,
+            size: 16,
             usage: wgpu::BufferUsages::COPY_SRC | wgpu::BufferUsages::QUERY_RESOLVE,
             mapped_at_creation: false,
         });
 
         let destination_buffer = handle.device().create_buffer(&wgpu::BufferDescriptor {
             label: None,
-            size,
+            size: 16,
             usage: wgpu::BufferUsages::COPY_DST | wgpu::BufferUsages::MAP_READ,
             mapped_at_creation: false,
         });
@@ -95,14 +86,16 @@ impl WgpuTimer {
         }
     }
 
-    pub fn resolve_pair(&self, encoder: &mut wgpu::CommandEncoder, pair: QueryPair) {
-        encoder.resolve_query_set(&self.query_set, 0..2, &self.resolve_buffer, 0);
+    pub fn resolve_pass(&self, encoder: &mut wgpu::CommandEncoder) {
+        let resolve_range = self.current_query().into();
+        println!("\nResolving query range: {:?}", resolve_range);
+        encoder.resolve_query_set(&self.query_set, resolve_range, &self.resolve_buffer, 0);
         encoder.copy_buffer_to_buffer(
             &self.resolve_buffer,
             0,
             &self.destination_buffer,
             0,
-            self.resolve_buffer.size(),
+            self.current_query().size(),
         );
     }
 
@@ -112,15 +105,6 @@ impl WgpuTimer {
 
     pub fn query_set(&self) -> &QuerySet {
         &self.query_set
-    }
-
-    pub fn timestamp_writes(&self) -> wgpu::ComputePassTimestampWrites {
-        let pair = self.current_query.get();
-        wgpu::ComputePassTimestampWrites {
-            query_set: &self.query_set,
-            beginning_of_pass_write_index: Some(pair.start),
-            end_of_pass_write_index: Some(pair.end),
-        }
     }
 
     pub fn increment_query(&self) {
@@ -137,33 +121,44 @@ impl WgpuTimer {
 }
 
 impl Measurement for &WgpuTimer {
-    type Intermediate = QueryPair;
+    type Intermediate = (); //query index
 
-    type Value = u64;
+    type Value = u64; // Raw unscaled GPU counter
+                      // Must be multiplied by the timestamp period to get nanoseconds
 
     fn start(&self) -> Self::Intermediate {
-        let start = self.current_query.get();
-        start
+        let mut encoder = self
+            .handle
+            .device()
+            .create_command_encoder(&wgpu::CommandEncoderDescriptor { label: None });
+        encoder.write_timestamp(self.query_set(), self.current_query().start);
+        self.handle().queue().submit(Some(encoder.finish()));
+        self.handle.device().poll(wgpu::Maintain::Wait);
     }
 
-    fn end(&self, i: Self::Intermediate) -> Self::Value {
+    fn end(&self, _i: Self::Intermediate) -> Self::Value {
+        let mut encoder = self
+            .handle
+            .device()
+            .create_command_encoder(&wgpu::CommandEncoderDescriptor { label: None });
+        encoder.write_timestamp(self.query_set(), self.current_query().end);
+        self.resolve_pass(&mut encoder);
+        self.handle().queue().submit(Some(encoder.finish()));
+        self.handle.device().poll(wgpu::Maintain::Wait);
+
         self.destination_buffer
             .slice(..)
             .map_async(wgpu::MapMode::Read, |_| ());
         self.handle.device().poll(wgpu::Maintain::Wait);
         let timestamps: Vec<u64> = {
-            println!("Mapping: {:?}", i.start_addr()..i.end_addr());
-            let timestamp_view = self
-                .destination_buffer
-                .slice(i.start_addr()..i.end_addr())
-                .get_mapped_range();
-
+            let timestamp_view = self.destination_buffer.slice(0..16).get_mapped_range();
             (*bytemuck::cast_slice(&timestamp_view)).to_vec()
         };
         self.destination_buffer.unmap();
         self.increment_query();
         println!("Timestamps: {:?}", timestamps);
-        1
+        let delta = timestamps[1] - timestamps[0];
+        delta
     }
 
     fn add(&self, v1: &Self::Value, v2: &Self::Value) -> Self::Value {
@@ -187,7 +182,7 @@ struct WgpuTimerFormatter;
 
 impl ValueFormatter for WgpuTimerFormatter {
     fn format_value(&self, value: f64) -> String {
-        format!("{:.4} ms", value)
+        format!("{:.4} ns", value)
     }
 
     fn format_throughput(&self, throughput: &Throughput, value: f64) -> String {
@@ -201,7 +196,7 @@ impl ValueFormatter for WgpuTimerFormatter {
     }
 
     fn scale_values(&self, _typical_value: f64, _values: &mut [f64]) -> &'static str {
-        "ms"
+        "ns"
     }
 
     /// TODO!
@@ -218,103 +213,17 @@ impl ValueFormatter for WgpuTimerFormatter {
     }
 
     fn scale_for_machines(&self, _values: &mut [f64]) -> &'static str {
-        "ms"
+        "ns"
     }
 }
 
 #[cfg(test)]
 mod tests {
-    use std::borrow::Cow;
-
     use crate::*;
 
     #[test]
-    pub fn does_it_work() {
-        let TIMER = WgpuTimer::new(pollster::block_on(async {
-            GPUHandle::new().await.unwrap()
-        }));
-
-        let n_elements = 1024 * 1024;
-        let A = rand_gpu_buffer::<f32>(TIMER.handle(), n_elements);
-        let B = rand_gpu_buffer::<f32>(TIMER.handle(), 4);
-        let C = empty_buffer::<f32>(TIMER.handle().device(), n_elements);
-
-        let shader_module = unsafe {
-            TIMER
-                .handle()
-                .device()
-                .create_shader_module_unchecked(wgpu::ShaderModuleDescriptor {
-                    label: None,
-                    source: wgpu::ShaderSource::Wgsl(Cow::Borrowed(include_str!("../add.wgsl"))),
-                })
-        };
-
-        let pipeline =
-            TIMER
-                .handle()
-                .device()
-                .create_compute_pipeline(&wgpu::ComputePipelineDescriptor {
-                    label: None,
-                    layout: None,
-                    module: &shader_module,
-                    entry_point: "main",
-                });
-
-        let bind_group_entries = [
-            wgpu::BindGroupEntry {
-                binding: 0,
-                resource: A.as_entire_binding(),
-            },
-            wgpu::BindGroupEntry {
-                binding: 1,
-                resource: B.as_entire_binding(),
-            },
-            wgpu::BindGroupEntry {
-                binding: 2,
-                resource: C.as_entire_binding(),
-            },
-        ];
-
-        let bind_group = TIMER
-            .handle()
-            .device()
-            .create_bind_group(&wgpu::BindGroupDescriptor {
-                label: None,
-                layout: &pipeline.get_bind_group_layout(0),
-                entries: &bind_group_entries,
-            });
-
-        let mut encoder = TIMER
-            .handle()
-            .device()
-            .create_command_encoder(&wgpu::CommandEncoderDescriptor { label: None });
-        {
-            let tsw = TIMER.timestamp_writes();
-            println!("Timestamp writes: {:?}", tsw);
-            let mut cpass = encoder.begin_compute_pass(&wgpu::ComputePassDescriptor {
-                label: None,
-                timestamp_writes: Some(tsw),
-            });
-            cpass.set_bind_group(0, &bind_group, &[]);
-            cpass.set_pipeline(&pipeline);
-            cpass.dispatch_workgroups((n_elements / 64) as u32, 1, 1);
-        }
-        TIMER.resolve_pair(&mut encoder, TIMER.current_query());
-        TIMER.handle().queue().submit(Some(encoder.finish()));
-        TIMER.handle().device().poll(wgpu::Maintain::Wait);
-
-        TIMER
-            .destination_buffer
-            .slice(..)
-            .map_async(wgpu::MapMode::Read, |_| ());
-        TIMER.handle.device().poll(wgpu::Maintain::Wait);
-        let timestamps: Vec<u64> = {
-            let timestamp_view = TIMER.destination_buffer.slice(0..8).get_mapped_range();
-
-            (*bytemuck::cast_slice(&timestamp_view)).to_vec()
-        };
-        TIMER.destination_buffer.unmap();
-        TIMER.increment_query();
-        println!("Timestamps: {:?}", timestamps);
+    pub fn pair_size() {
+        let query = QueryPair::first();
+        assert_eq!(query.size(), 16);
     }
 }

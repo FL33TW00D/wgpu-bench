@@ -66,6 +66,7 @@ pub fn wgpu_bench(c: &mut Criterion<&WgpuTimer>) {
             entries: &bind_group_entries,
         });
 
+    group.sample_size(10);
     group.bench_function(BenchmarkId::new("add kernel", n_elements), |b| {
         b.iter(|| {
             let mut encoder = TIMER
@@ -73,16 +74,14 @@ pub fn wgpu_bench(c: &mut Criterion<&WgpuTimer>) {
                 .device()
                 .create_command_encoder(&wgpu::CommandEncoderDescriptor { label: None });
             {
-                let tsw = TIMER.timestamp_writes();
                 let mut cpass = encoder.begin_compute_pass(&wgpu::ComputePassDescriptor {
                     label: None,
-                    timestamp_writes: Some(tsw),
+                    timestamp_writes: None,
                 });
                 cpass.set_bind_group(0, &bind_group, &[]);
                 cpass.set_pipeline(&pipeline);
                 cpass.dispatch_workgroups((n_elements / 64) as u32, 1, 1);
             }
-            TIMER.increment_query();
             TIMER.handle().queue().submit(Some(encoder.finish()));
             TIMER.handle().device().poll(wgpu::Maintain::Wait);
         });
