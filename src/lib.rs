@@ -1,7 +1,6 @@
 mod data;
 mod handle;
 mod metadata;
-mod profiler;
 mod shape;
 
 use std::{cell::Cell, ops::Range};
@@ -9,7 +8,6 @@ use std::{cell::Cell, ops::Range};
 pub use data::*;
 pub use handle::*;
 pub use metadata::*;
-pub use profiler::*;
 pub use shape::*;
 
 use criterion::{
