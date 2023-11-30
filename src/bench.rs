@@ -31,25 +31,32 @@ pub fn benchmark<K: Kernel>(c: &mut Criterion<&WgpuTimer>, handle: &GPUHandle, k
             entry_point: "main",
         });
 
-    let buffers = K::buffers(handle);
+    let mut buffers = K::buffers(handle);
+    let uniform_buffer = kernel.metadata().into_buffer(handle);
+    buffers.push(uniform_buffer);
+
     let bind_group_entries = buffers
         .iter()
         .enumerate()
         .map(|(i, buffer)| wgpu::BindGroupEntry {
-            binding: i as u32,
+            binding: (i % 4) as u32,
             resource: buffer.as_entire_binding(),
         })
         .collect::<Vec<_>>();
 
-    let bind_group = handle
-        .device()
-        .create_bind_group(&wgpu::BindGroupDescriptor {
-            label: None,
-            layout: &pipeline.get_bind_group_layout(0),
-            entries: &bind_group_entries,
-        });
-
-    let uniform_buffer = kernel.metadata().into_buffer(handle);
+    let bind_groups = bind_group_entries
+        .chunks(4)
+        .enumerate()
+        .map(|(i, entries)| {
+            handle
+                .device()
+                .create_bind_group(&wgpu::BindGroupDescriptor {
+                    label: None,
+                    layout: &pipeline.get_bind_group_layout(i as _),
+                    entries,
+                })
+        })
+        .collect::<Vec<_>>();
 
     let workload = Workload::new(WorkgroupCount(1, 1, 1), WorkgroupSize(1, 1, 1));
 
@@ -64,7 +71,9 @@ pub fn benchmark<K: Kernel>(c: &mut Criterion<&WgpuTimer>, handle: &GPUHandle, k
                     label: None,
                     timestamp_writes: None,
                 });
-                cpass.set_bind_group(0, &bind_group, &[]);
+                for (i, bind_group) in bind_groups.iter().enumerate() {
+                    cpass.set_bind_group(i as _, bind_group, &[]);
+                }
                 cpass.set_pipeline(&pipeline);
                 let (x, y, z) = workload.count().as_tuple();
                 cpass.dispatch_workgroups(x, y, z);
