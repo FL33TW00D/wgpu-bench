@@ -1,4 +1,4 @@
-# wgpu-bencher
+# wgpu-bench
 
 Picture this,
 
@@ -12,7 +12,7 @@ You're feeling *good*.
 
 Then you start to wonder - "just how fast is this baby?"
 
-Fear not, you reach for the tried and true `wgpu-bencher` to find out.
+Fear not, you reach for the tried and true `wgpu-bench` to find out.
 
 It's 10% slower...
 
@@ -20,4 +20,4 @@ You're devestated.
 
 --
 
-`wgpu-bencher` can bring about your moment of devestation faster than any other lib!
+`wgpu-bench` can bring about your moment of devestation faster than any other lib!
