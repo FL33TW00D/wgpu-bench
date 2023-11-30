@@ -1,14 +1,18 @@
+mod bench;
 mod data;
 mod handle;
 mod metadata;
 mod shape;
+mod workload;
 
 use std::{cell::Cell, ops::Range};
 
+pub use bench::*;
 pub use data::*;
 pub use handle::*;
 pub use metadata::*;
 pub use shape::*;
+pub use workload::*;
 
 use criterion::{
     measurement::{Measurement, ValueFormatter},
@@ -16,7 +20,7 @@ use criterion::{
 };
 use wgpu::QuerySet;
 
-pub const MAX_QUERIES: u32 = 4096;
+pub const MAX_QUERIES: u32 = 1024;
 
 /// Start and end index in the counter sample buffer
 #[derive(Debug, Clone, Copy)]
@@ -85,9 +89,12 @@ impl WgpuTimer {
     }
 
     pub fn resolve_pass(&self, encoder: &mut wgpu::CommandEncoder) {
-        let resolve_range = self.current_query().into();
-        println!("\nResolving query range: {:?}", resolve_range);
-        encoder.resolve_query_set(&self.query_set, resolve_range, &self.resolve_buffer, 0);
+        encoder.resolve_query_set(
+            &self.query_set,
+            self.current_query().into(),
+            &self.resolve_buffer,
+            0,
+        );
         encoder.copy_buffer_to_buffer(
             &self.resolve_buffer,
             0,
@@ -154,9 +161,7 @@ impl Measurement for &WgpuTimer {
         };
         self.destination_buffer.unmap();
         self.increment_query();
-        println!("Timestamps: {:?}", timestamps);
-        let delta = timestamps[1] - timestamps[0];
-        delta
+        timestamps[1] - timestamps[0]
     }
 
     fn add(&self, v1: &Self::Value, v2: &Self::Value) -> Self::Value {
@@ -187,9 +192,9 @@ impl ValueFormatter for WgpuTimerFormatter {
         match throughput {
             Throughput::Bytes(b) => format!(
                 "{:.4} GiB/s",
-                (*b as f64) / (1024.0 * 1024.0 * 1024.0) / (value * 1e-3)
+                (*b as f64) / (1024.0 * 1024.0 * 1024.0) / (value * 1e-9)
             ),
-            Throughput::Elements(b) => format!("{:.4} elements/s", (*b as f64) / (value * 1e-3)),
+            Throughput::Elements(b) => format!("{:.4} elements/s", (*b as f64) / (value * 1e-9)),
         }
     }
 
