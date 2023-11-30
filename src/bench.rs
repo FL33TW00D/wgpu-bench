@@ -8,7 +8,7 @@ pub trait Kernel {
     type Metadata: OpMetadata;
     fn name() -> &'static str;
     fn source() -> &'static str;
-    fn metadata() -> Self::Metadata;
+    fn metadata(&self) -> Self::Metadata;
     fn buffers(handle: &GPUHandle) -> Vec<wgpu::Buffer>;
 }
 
@@ -48,6 +48,8 @@ pub fn benchmark<K: Kernel>(c: &mut Criterion<&WgpuTimer>, handle: &GPUHandle, k
             layout: &pipeline.get_bind_group_layout(0),
             entries: &bind_group_entries,
         });
+
+    let uniform_buffer = kernel.metadata().into_buffer(handle);
 
     let workload = Workload::new(WorkgroupCount(1, 1, 1), WorkgroupSize(1, 1, 1));
 

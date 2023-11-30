@@ -10,9 +10,10 @@ lazy_static::lazy_static! {
     }));
 }
 
-#[derive(ShaderType)]
+#[derive(ShaderType, derive_new::new)]
 pub struct LayerNormMeta {
     N: u32,
+    eps: f32,
 }
 
 impl OpMetadata for LayerNormMeta {}
@@ -38,6 +39,10 @@ impl Kernel for LayerNorm {
         let B = rand_gpu_buffer::<f32>(handle, 4);
         let C = empty_buffer::<f32>(handle.device(), 1024);
         vec![A, B, C]
+    }
+
+    fn metadata(&self) -> Self::Metadata {
+        LayerNormMeta::new(1024, self.eps)
     }
 }
 
