@@ -17,7 +17,10 @@ pub struct LayerNormMeta {
 
 impl OpMetadata for LayerNormMeta {}
 
-pub struct LayerNorm;
+#[derive(derive_new::new)]
+pub struct LayerNorm {
+    eps: f32,
+}
 
 impl Kernel for LayerNorm {
     type Metadata = LayerNormMeta;
@@ -39,8 +42,7 @@ impl Kernel for LayerNorm {
 }
 
 pub fn benchmark(c: &mut Criterion<&WgpuTimer>) {
-    let layernorm = LayerNorm;
-    wgpu_bencher::benchmark(c, TIMER.handle(), layernorm)
+    wgpu_bencher::benchmark(c, TIMER.handle(), LayerNorm::new(1e-5))
 }
 
 criterion_group!(

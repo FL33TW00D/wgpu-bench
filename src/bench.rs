@@ -8,6 +8,7 @@ pub trait Kernel {
     type Metadata: OpMetadata;
     fn name() -> &'static str;
     fn source() -> &'static str;
+    fn metadata() -> Self::Metadata;
     fn buffers(handle: &GPUHandle) -> Vec<wgpu::Buffer>;
 }
 
@@ -31,7 +32,6 @@ pub fn benchmark<K: Kernel>(c: &mut Criterion<&WgpuTimer>, handle: &GPUHandle, k
         });
 
     let buffers = K::buffers(handle);
-    assert!(buffers.len() <= 4);
     let bind_group_entries = buffers
         .iter()
         .enumerate()
