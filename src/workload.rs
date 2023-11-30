@@ -1,4 +1,4 @@
-#[derive(Debug)]
+#[derive(Debug, derive_new::new)]
 pub struct WorkgroupCount(pub u32, pub u32, pub u32); //Analagous to gridDim in CUDA
 
 impl WorkgroupCount {
@@ -7,7 +7,14 @@ impl WorkgroupCount {
     }
 }
 
-#[derive(Debug)]
+#[macro_export]
+macro_rules! wgc {
+    ($x:expr, $y:expr, $z:expr) => {
+        $crate::WorkgroupCount::new($x, $y, $z)
+    };
+}
+
+#[derive(Debug, derive_new::new)]
 pub struct WorkgroupSize(pub u32, pub u32, pub u32); //Analagous to blockDim in CUDA
 
 impl WorkgroupSize {
@@ -16,17 +23,24 @@ impl WorkgroupSize {
     }
 }
 
+#[macro_export]
+macro_rules! wgs {
+    ($x:expr, $y:expr, $z:expr) => {
+        $crate::WorkgroupSize::new($x, $y, $z)
+    };
+}
+
 ///The Workload represents the entire piece of work.
 ///For more read: https://surma.dev/things/webgpu/
 #[derive(Debug)]
 pub struct Workload {
-    count: WorkgroupCount,
     size: WorkgroupSize,
+    count: WorkgroupCount,
 }
 
 impl Workload {
-    pub fn new(count: WorkgroupCount, size: WorkgroupSize) -> Self {
-        Self { count, size }
+    pub fn new(size: WorkgroupSize, count: WorkgroupCount) -> Self {
+        Self { size, count }
     }
 
     pub fn count(&self) -> &WorkgroupCount {

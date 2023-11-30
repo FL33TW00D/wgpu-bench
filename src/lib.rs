@@ -132,8 +132,11 @@ impl WgpuTimer {
 /// which incurs overhead, the reported elapsed time will be inaccurate.
 ///
 /// However, relative measurements should be accurate, as the overhead is ~constant.
+///
+/// In an ideal world, we would use `wgpu::ComputeTimestampWrites` to record the exact kernel
+/// execution time. But the number of queries is limited, and Criterion performs many iterations.
 impl Measurement for &WgpuTimer {
-    type Intermediate = (); //query index
+    type Intermediate = ();
 
     type Value = u64; // Raw unscaled GPU counter
                       // Must be multiplied by the timestamp period to get nanoseconds

@@ -22,4 +22,5 @@ pollster = "0.3.0"
 lazy_static = "1.4.0"
 encase = "0.6.1"
 derive-new = "0.6.0"
+tera = "1.19.1"
 

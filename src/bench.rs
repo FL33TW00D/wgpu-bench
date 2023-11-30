@@ -6,10 +6,13 @@ use crate::{GPUHandle, OpMetadata, WgpuTimer, WorkgroupCount, WorkgroupSize, Wor
 
 pub trait Kernel {
     type Metadata: OpMetadata;
+    type Problem;
     fn name() -> &'static str;
-    fn source() -> &'static str;
+    fn workload() -> Workload;
+    fn source(workload: Workload) -> &'static str;
+    fn problem() -> Self::Problem;
     fn metadata(&self) -> Self::Metadata;
-    fn buffers(handle: &GPUHandle) -> Vec<wgpu::Buffer>;
+    fn buffers(&self, handle: &GPUHandle) -> Vec<wgpu::Buffer>;
 }
 
 pub fn benchmark<K: Kernel>(c: &mut Criterion<&WgpuTimer>, handle: &GPUHandle, kernel: K) {
@@ -18,7 +21,7 @@ pub fn benchmark<K: Kernel>(c: &mut Criterion<&WgpuTimer>, handle: &GPUHandle, k
             .device()
             .create_shader_module_unchecked(wgpu::ShaderModuleDescriptor {
                 label: None,
-                source: wgpu::ShaderSource::Wgsl(Cow::Borrowed(K::source())),
+                source: wgpu::ShaderSource::Wgsl(Cow::Borrowed(K::source(K::workload()))),
             })
     };
 
@@ -31,7 +34,7 @@ pub fn benchmark<K: Kernel>(c: &mut Criterion<&WgpuTimer>, handle: &GPUHandle, k
             entry_point: "main",
         });
 
-    let mut buffers = K::buffers(handle);
+    let mut buffers = kernel.buffers(handle);
     let uniform_buffer = kernel.metadata().into_buffer(handle);
     buffers.push(uniform_buffer);
 
@@ -58,7 +61,7 @@ pub fn benchmark<K: Kernel>(c: &mut Criterion<&WgpuTimer>, handle: &GPUHandle, k
         })
         .collect::<Vec<_>>();
 
-    let workload = Workload::new(WorkgroupCount(1, 1, 1), WorkgroupSize(1, 1, 1));
+    let workload = K::workload();
 
     let mut group = c.benchmark_group("wgpu kernel");
     group.bench_function(BenchmarkId::new(K::name(), 0), |b| {
