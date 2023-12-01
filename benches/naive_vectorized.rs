@@ -1,11 +1,14 @@
 #![allow(non_snake_case)]
 use encase::ShaderType;
+use inline_python::{python, Context};
+use numpy::PyArrayDyn;
+use pyo3::Python;
 use smallvec::smallvec;
 
 use criterion::{criterion_group, criterion_main, Criterion};
 use wgpu_bencher::{
-    shape, wgc, wgs, CPUTensor, GPUHandle, GPUTensor, Kernel, KernelContextExt, OpMetadata,
-    WgpuTimer, Workload,
+    shape, wgc, wgs, CPUTensor, GPUHandle, Kernel, KernelContextExt, OpMetadata, WgpuTimer,
+    Workload,
 };
 
 lazy_static::lazy_static! {
@@ -41,31 +44,51 @@ impl Kernel for LayerNorm {
         let mut context = tera::Context::new();
         tera.add_raw_template(
             &Self::name(),
-            include_str!("../kernels/layernorm_vec4.wgsl"),
+            include_str!("../kernels/layernorm_scalar.wgsl"),
         )
         .unwrap();
         context.insert_workload(workload);
         tera.render(Self::name(), &context).unwrap()
     }
 
-    fn tensors(handle: &GPUHandle) -> Vec<GPUTensor> {
-        let input = CPUTensor::rand::<f32>(shape![4, 1024, 1024]).into_gpu(handle);
-        let scale = CPUTensor::rand::<f32>(shape![1024]).into_gpu(handle);
-        let bias = CPUTensor::rand::<f32>(shape![1024]).into_gpu(handle);
-        let output = CPUTensor::zeros::<f32>(shape![4, 1024, 1024]).into_gpu(handle);
+    fn tensors() -> Vec<CPUTensor> {
+        let input = CPUTensor::rand::<f32>(shape![4, 1024, 1024]);
+        let scale = CPUTensor::rand::<f32>(shape![1024]);
+        let bias = CPUTensor::rand::<f32>(shape![1024]);
+        let output = CPUTensor::zeros::<f32>(shape![4, 1024, 1024]);
         vec![input, scale, bias, output]
     }
 
-    fn workload(tensors: &[GPUTensor]) -> Workload {
+    fn workload(tensors: &[CPUTensor]) -> Workload {
         let input = &tensors[0];
         let [_B, _N, M] = input.shape().try_into().unwrap();
         Workload::new(wgs![128, 1, 1], wgc![M as _, 1, 1])
     }
 
-    fn metadata(&self, tensors: &[GPUTensor]) -> Self::Metadata {
+    fn metadata(&self, tensors: &[CPUTensor]) -> Self::Metadata {
         let input = &tensors[0];
         let [_B, N, M] = input.shape().try_into().unwrap();
         LayerNormMeta::new(N as _, M as _, (N / 4) as _, self.eps)
+    }
+
+    fn validate(&self, tensors: &[CPUTensor]) {
+        let (input, scale, bias) = (&tensors[0], &tensors[1], &tensors[2]);
+        let torch_result = Python::with_gil(|py| {
+            let (py_input, py_scale, py_bias) = (
+                input.to_py::<f32>(&py),
+                scale.to_py::<f32>(&py),
+                bias.to_py::<f32>(&py),
+            );
+            let result: Context = python! {
+                import torch
+                import torch.nn.functional as F
+
+                (input, scale, bias) = (torch.from_numpy('py_input), torch.from_numpy('py_scale), torch.from_numpy('py_bias))
+                result = F.layer_norm(input, (input.shape[-1],), weight=scale, bias=bias).numpy()
+            };
+            CPUTensor::from(result.get_with_gil::<&PyArrayDyn<f32>>(py, "result"))
+        });
+        println!("torch_result: {:?}", torch_result);
     }
 }
 

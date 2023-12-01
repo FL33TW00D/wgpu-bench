@@ -1,3 +1,4 @@
+use ndarray::Dimension;
 use numpy::ndarray::{ArrayD, ArrayViewD};
 use rand::{
     distributions::{uniform::SampleUniform, Uniform},
@@ -110,6 +111,85 @@ impl CPUTensor {
     ) -> &PyArrayDyn<T> {
         use numpy::PyArray;
         PyArray::from_owned_array(*py, unsafe { self.clone().into_array_unchecked::<T>() })
+    }
+
+    pub fn fmt(&self) -> String {
+        format!("{}", unsafe { self.to_array_view_unchecked::<f32>() })
+    }
+
+    pub fn debug_fmt(&self) -> String {
+        format!("{:?}", unsafe { self.to_array_view_unchecked::<f32>() })
+    }
+
+    pub fn all_close(&self, other: &Self, atol: f32, rtol: f32) -> anyhow::Result<()> {
+        if self.shape() != other.shape() {
+            anyhow::bail!("Shape mismatch {:?} != {:?}", self.shape(), other.shape())
+        }
+        let ma = unsafe { self.to_array_view_unchecked::<f32>() };
+        let mb = unsafe { other.to_array_view_unchecked::<f32>() };
+        let mut elem_cnt = 0;
+        let mut fail_cnt = 0;
+        let mut total_error = 0f32;
+        let mut mae = -1f32;
+        let mut mae_idxs = Default::default();
+        ndarray::indices_of(&ma).into_iter().try_for_each(|idxs| {
+            let (a, b) = (ma[&idxs], mb[&idxs]);
+            let abs_diff = (a - b).abs();
+            let cur_mae = mae.max(abs_diff);
+            if cur_mae > mae {
+                mae = cur_mae;
+                mae_idxs = idxs.clone();
+            }
+            total_error += abs_diff;
+            elem_cnt += 1;
+
+            if !((a.is_nan() && b.is_nan())
+                || (a.is_infinite() && b.is_infinite() && a.signum() == b.signum())
+                || abs_diff <= atol + rtol * b.abs())
+            {
+                let slice = idxs.slice();
+                log::warn!(
+                    "Mismatch at {:?}: {:?} != {:?} (atol={}, rtol={})",
+                    slice,
+                    a,
+                    b,
+                    atol,
+                    rtol
+                );
+                fail_cnt += 1;
+            }
+            Ok::<(), anyhow::Error>(())
+        })?;
+        let avg_error = total_error / elem_cnt as f32;
+        let slice = mae_idxs.slice();
+        if fail_cnt > 0 {
+            anyhow::bail!(
+                "{} samples not close - AVGE={} MAE={} at {:?}",
+                fail_cnt,
+                avg_error,
+                mae,
+                slice,
+            );
+        } else {
+            println!("All close - AVGE={} MAE={} at {:?}", avg_error, mae, slice,);
+            Ok(())
+        }
+    }
+}
+
+impl std::fmt::Debug for CPUTensor {
+    fn fmt(&self, f: &mut std::fmt::Formatter<'_>) -> std::fmt::Result {
+        f.debug_struct("CPUTensor")
+            .field("dt", &self.dt)
+            .field("shape", &self.shape)
+            .field("storage", &self.storage)
+            .finish()
+    }
+}
+
+impl std::fmt::Display for CPUTensor {
+    fn fmt(&self, f: &mut std::fmt::Formatter<'_>) -> std::fmt::Result {
+        f.write_str(&self.fmt())
     }
 }
 

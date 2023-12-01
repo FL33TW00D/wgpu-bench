@@ -2,7 +2,7 @@ use std::{borrow::Cow, time::Duration};
 
 use criterion::{BenchmarkId, Criterion};
 
-use crate::{GPUHandle, GPUTensor, OpMetadata, WgpuTimer, Workload};
+use crate::{CPUTensor, GPUHandle, OpMetadata, WgpuTimer, Workload};
 
 pub trait KernelContextExt {
     fn insert_workload(&mut self, workload: &Workload);
@@ -21,13 +21,14 @@ pub trait Kernel: std::fmt::Debug {
     type Metadata: OpMetadata;
     fn name() -> &'static str;
     fn source(workload: &Workload) -> String;
-    fn tensors(handle: &GPUHandle) -> Vec<GPUTensor>;
-    fn workload(tensors: &[GPUTensor]) -> Workload;
-    fn metadata(&self, tensors: &[GPUTensor]) -> Self::Metadata;
-    fn validate(&self, tensors: &[GPUTensor]) -> anyhow::Result<()>;
+    fn tensors() -> Vec<CPUTensor>;
+    fn workload(tensors: &[CPUTensor]) -> Workload;
+    fn metadata(&self, tensors: &[CPUTensor]) -> Self::Metadata;
+    fn validate(&self, tensors: &[CPUTensor]);
 }
 
-fn dispatch(
+#[inline(always)]
+pub fn dispatch(
     handle: &GPUHandle,
     workload: &Workload,
     bind_groups: &[wgpu::BindGroup],
@@ -53,18 +54,41 @@ fn dispatch(
     handle.device().poll(wgpu::Maintain::Wait);
 }
 
-pub fn benchmark<K: Kernel>(c: &mut Criterion<&WgpuTimer>, timer: &WgpuTimer, kernel: K) {
-    let handle = timer.handle();
+pub fn source_to_pipeline(handle: &GPUHandle, source: &str) -> wgpu::ComputePipeline {
+    let shader_module = unsafe {
+        handle
+            .device()
+            .create_shader_module_unchecked(wgpu::ShaderModuleDescriptor {
+                label: None,
+                source: wgpu::ShaderSource::Wgsl(Cow::Borrowed(source)),
+            })
+    };
 
-    let tensors = K::tensors(handle);
-    let workload = K::workload(&tensors);
+    handle
+        .device()
+        .create_compute_pipeline(&wgpu::ComputePipelineDescriptor {
+            label: None,
+            layout: None,
+            module: &shader_module,
+            entry_point: "main",
+        })
+}
 
-    let mut buffers = tensors
+pub fn tensors_to_bind_groups<K: Kernel>(
+    handle: &GPUHandle,
+    kernel: K,
+    tensors: Vec<CPUTensor>,
+    pipeline: &wgpu::ComputePipeline,
+) -> Vec<wgpu::BindGroup> {
+    let uniform_buffer = kernel.metadata(&tensors).into_buffer(handle);
+    let gpu_tensors = tensors
+        .into_iter()
+        .map(|t| t.into_gpu(handle))
+        .collect::<Vec<_>>();
+    let mut buffers = gpu_tensors
         .iter()
         .map(|t| t.storage().inner())
         .collect::<Vec<_>>();
-
-    let uniform_buffer = kernel.metadata(&tensors).into_buffer(handle);
     buffers.push(&uniform_buffer);
 
     let bind_group_entries = buffers
@@ -76,25 +100,7 @@ pub fn benchmark<K: Kernel>(c: &mut Criterion<&WgpuTimer>, timer: &WgpuTimer, ke
         })
         .collect::<Vec<_>>();
 
-    let shader_module = unsafe {
-        handle
-            .device()
-            .create_shader_module_unchecked(wgpu::ShaderModuleDescriptor {
-                label: None,
-                source: wgpu::ShaderSource::Wgsl(Cow::Borrowed(&K::source(&workload))),
-            })
-    };
-
-    let pipeline = handle
-        .device()
-        .create_compute_pipeline(&wgpu::ComputePipelineDescriptor {
-            label: None,
-            layout: None,
-            module: &shader_module,
-            entry_point: "main",
-        });
-
-    let bind_groups = bind_group_entries
+    bind_group_entries
         .chunks(4)
         .enumerate()
         .map(|(i, entries)| {
@@ -106,7 +112,17 @@ pub fn benchmark<K: Kernel>(c: &mut Criterion<&WgpuTimer>, timer: &WgpuTimer, ke
                     entries,
                 })
         })
-        .collect::<Vec<_>>();
+        .collect::<Vec<_>>()
+}
+
+pub fn benchmark<K: Kernel>(c: &mut Criterion<&WgpuTimer>, timer: &WgpuTimer, kernel: K) {
+    let handle = timer.handle();
+    let tensors = K::tensors();
+    kernel.validate(&tensors);
+    let workload = K::workload(&tensors);
+    let source = K::source(&workload);
+    let pipeline = source_to_pipeline(handle, &source);
+    let bind_groups = tensors_to_bind_groups(handle, kernel, tensors, &pipeline);
 
     let mut group = c.benchmark_group("wgpu kernel");
     group.warm_up_time(Duration::from_secs(2)); //Limit warmup time to avoid MAX_QUERIES limit
