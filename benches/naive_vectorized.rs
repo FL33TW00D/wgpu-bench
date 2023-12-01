@@ -86,7 +86,7 @@ impl Kernel for LayerNorm {
     fn workload() -> Workload {
         let problem = Self::problem();
         let M = problem.X[1];
-        Workload::new(wgs![128, 1, 1], wgc![M as _, 1, 1])
+        Workload::new(wgs![128 / 4, 1, 1], wgc![M as _, 1, 1])
     }
 }
 
