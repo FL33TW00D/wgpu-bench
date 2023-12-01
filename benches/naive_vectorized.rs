@@ -86,12 +86,12 @@ impl Kernel for LayerNorm {
     fn workload() -> Workload {
         let problem = Self::problem();
         let M = problem.X[1];
-        Workload::new(wgs![128, 1, 1], wgc![M as _, 1, 1])
+        Workload::new(wgs![128 / 4, 1, 1], wgc![M as _, 1, 1])
     }
 }
 
 pub fn benchmark(c: &mut Criterion<&WgpuTimer>) {
-    wgpu_bencher::benchmark(c, TIMER.handle(), LayerNorm::new(1e-5))
+    wgpu_bencher::benchmark(c, &TIMER, LayerNorm::new(1e-5))
 }
 
 criterion_group!(

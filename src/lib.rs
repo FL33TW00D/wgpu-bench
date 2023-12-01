@@ -37,6 +37,14 @@ impl QueryPair {
     pub fn size(&self) -> wgpu::BufferAddress {
         ((self.end - self.start + 1) as usize * std::mem::size_of::<u64>()) as wgpu::BufferAddress
     }
+
+    pub fn start_address(&self) -> wgpu::BufferAddress {
+        (self.start as usize * std::mem::size_of::<u64>()) as wgpu::BufferAddress
+    }
+
+    pub fn end_address(&self) -> wgpu::BufferAddress {
+        ((self.end + 1) as usize * std::mem::size_of::<u64>()) as wgpu::BufferAddress
+    }
 }
 
 impl Into<Range<u32>> for QueryPair {
@@ -65,16 +73,18 @@ impl WgpuTimer {
             label: None,
         });
 
+        let size = MAX_QUERIES as u64 * std::mem::size_of::<u64>() as u64;
+
         let resolve_buffer = handle.device().create_buffer(&wgpu::BufferDescriptor {
             label: None,
-            size: 16,
+            size,
             usage: wgpu::BufferUsages::COPY_SRC | wgpu::BufferUsages::QUERY_RESOLVE,
             mapped_at_creation: false,
         });
 
         let destination_buffer = handle.device().create_buffer(&wgpu::BufferDescriptor {
             label: None,
-            size: 16,
+            size,
             usage: wgpu::BufferUsages::COPY_DST | wgpu::BufferUsages::MAP_READ,
             mapped_at_creation: false,
         });
@@ -88,20 +98,13 @@ impl WgpuTimer {
         }
     }
 
-    pub fn resolve_pass(&self, encoder: &mut wgpu::CommandEncoder) {
-        encoder.resolve_query_set(
-            &self.query_set,
-            self.current_query().into(),
-            &self.resolve_buffer,
-            0,
-        );
-        encoder.copy_buffer_to_buffer(
-            &self.resolve_buffer,
-            0,
-            &self.destination_buffer,
-            0,
-            self.current_query().size(),
-        );
+    pub fn resolve_pass(&self, encoder: &mut wgpu::CommandEncoder, pass_query: QueryPair) {
+        let resolution_range = pass_query.into();
+        log::info!("Resolution range: {:?}", resolution_range);
+        encoder.resolve_query_set(&self.query_set, resolution_range, &self.resolve_buffer, 0);
+        let size = pass_query.size();
+        log::info!("Resolution size in bytes: {:?}", size);
+        encoder.copy_buffer_to_buffer(&self.resolve_buffer, 0, &self.destination_buffer, 0, size);
     }
 
     pub fn handle(&self) -> &GPUHandle {
@@ -114,6 +117,9 @@ impl WgpuTimer {
 
     pub fn increment_query(&self) {
         let pair = self.current_query.get();
+        if pair.end + 2 >= MAX_QUERIES {
+            panic!("Number of queries exceeds MAX_QUERIES, reduce duration of benchmark");
+        }
         self.current_query.set(QueryPair {
             start: pair.start + 2,
             end: pair.end + 2,
@@ -123,42 +129,62 @@ impl WgpuTimer {
     pub fn current_query(&self) -> QueryPair {
         self.current_query.get()
     }
+
+    //Fetches the current query as ComputePassTimestampWrites
+    pub fn timestamp_writes(&self) -> wgpu::ComputePassTimestampWrites {
+        wgpu::ComputePassTimestampWrites {
+            query_set: &self.query_set,
+            beginning_of_pass_write_index: Some(self.current_query().start),
+            end_of_pass_write_index: Some(self.current_query().end),
+        }
+    }
+
+    pub fn hardware_elapsed(&self, timestamps: &[u64]) -> u64 {
+        assert!(timestamps.len() % 2 == 0);
+        let mut elapsed = 0;
+        for i in (0..timestamps.len()).step_by(2) {
+            elapsed += timestamps[i + 1] - timestamps[i];
+        }
+        elapsed
+    }
 }
 
-/// We integrate Criterion with WebGPU by using the TIMESTAMP_QUERY functionality.
-/// We record the time using the GPU counters at the start and end of the benchmark.
+/// Criterion + wgpu
+/// To avoid recording overhead, we use `wgpu::ComputePassTimestampWrites`, which
+/// records the execution of the compute pass only.
 ///
-/// Unfortunately, as every iteration of the benchmark requires constructing \& submitting the command buffer,
-/// which incurs overhead, the reported elapsed time will be inaccurate.
+/// Each benchmark iteration is a single compute pass.
+/// To get the total execution time of the benchmark run, we sum the elapsed time
+/// for each compute pass.
 ///
-/// However, relative measurements should be accurate, as the overhead is ~constant.
-///
-/// In an ideal world, we would use `wgpu::ComputeTimestampWrites` to record the exact kernel
-/// execution time. But the number of queries is limited, and Criterion performs many iterations.
+/// This approach is not perfect and seems quite noisy.
 impl Measurement for &WgpuTimer {
-    type Intermediate = ();
+    type Intermediate = u32; // Index of the start query
 
     type Value = u64; // Raw unscaled GPU counter
                       // Must be multiplied by the timestamp period to get nanoseconds
 
     fn start(&self) -> Self::Intermediate {
-        let mut encoder = self
-            .handle
-            .device()
-            .create_command_encoder(&wgpu::CommandEncoderDescriptor { label: None });
-        encoder.write_timestamp(self.query_set(), self.current_query().start);
-        println!("Wrote query {}", self.current_query().start);
-        self.handle().queue().submit(Some(encoder.finish()));
-        self.handle.device().poll(wgpu::Maintain::Wait);
+        log::info!("\nQuery at start of pass: {:?}", self.current_query());
+        0
     }
 
-    fn end(&self, _i: Self::Intermediate) -> Self::Value {
+    fn end(&self, start_index: Self::Intermediate) -> Self::Value {
+        log::info!("\nQuery at end of pass: {:?}", self.current_query());
         let mut encoder = self
             .handle
             .device()
             .create_command_encoder(&wgpu::CommandEncoderDescriptor { label: None });
-        encoder.write_timestamp(self.query_set(), self.current_query().end);
-        self.resolve_pass(&mut encoder);
+
+        //Large window, eg 0..512
+        let pass_query = QueryPair {
+            start: start_index,
+            end: self.current_query().end - 2, //we have to decrement here because we increment at
+                                               //the end of each iter
+        };
+        log::info!("Pass range: {:?}", pass_query);
+
+        self.resolve_pass(&mut encoder, pass_query.clone());
         self.handle().queue().submit(Some(encoder.finish()));
         self.handle.device().poll(wgpu::Maintain::Wait);
 
@@ -167,12 +193,15 @@ impl Measurement for &WgpuTimer {
             .map_async(wgpu::MapMode::Read, |_| ());
         self.handle.device().poll(wgpu::Maintain::Wait);
         let timestamps: Vec<u64> = {
-            let timestamp_view = self.destination_buffer.slice(0..16).get_mapped_range();
+            let byte_range = pass_query.start_address()..pass_query.end_address();
+            log::info!("Byte range: {:?}", byte_range);
+            let timestamp_view = self.destination_buffer.slice(byte_range).get_mapped_range();
             (*bytemuck::cast_slice(&timestamp_view)).to_vec()
         };
+        log::info!("Timestamps: {:?}", timestamps);
         self.destination_buffer.unmap();
-        self.increment_query();
-        timestamps[1] - timestamps[0]
+        self.current_query.set(QueryPair::first());
+        self.hardware_elapsed(&timestamps)
     }
 
     fn add(&self, v1: &Self::Value, v2: &Self::Value) -> Self::Value {
