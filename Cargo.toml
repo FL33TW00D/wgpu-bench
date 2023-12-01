@@ -8,6 +8,10 @@ edition = "2021"
 name = "naive"
 harness = false
 
+[[bench]]
+name = "naive_vectorized"
+harness = false
+
 [dependencies]
 anyhow = "1.0.75"
 bytemuck = "1.14.0"

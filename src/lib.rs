@@ -20,7 +20,7 @@ use criterion::{
 };
 use wgpu::QuerySet;
 
-pub const MAX_QUERIES: u32 = 1024;
+pub const MAX_QUERIES: u32 = 4096;
 
 /// Start and end index in the counter sample buffer
 #[derive(Debug, Clone, Copy)]
@@ -147,6 +147,7 @@ impl Measurement for &WgpuTimer {
             .device()
             .create_command_encoder(&wgpu::CommandEncoderDescriptor { label: None });
         encoder.write_timestamp(self.query_set(), self.current_query().start);
+        println!("Wrote query {}", self.current_query().start);
         self.handle().queue().submit(Some(encoder.finish()));
         self.handle.device().poll(wgpu::Maintain::Wait);
     }
@@ -157,6 +158,7 @@ impl Measurement for &WgpuTimer {
             .device()
             .create_command_encoder(&wgpu::CommandEncoderDescriptor { label: None });
         encoder.write_timestamp(self.query_set(), self.current_query().end);
+        println!("Wrote query {}", self.current_query().end);
         self.resolve_pass(&mut encoder);
         self.handle().queue().submit(Some(encoder.finish()));
         self.handle.device().poll(wgpu::Maintain::Wait);

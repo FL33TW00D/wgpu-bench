@@ -4,7 +4,7 @@ use crate::GPUHandle;
 
 pub const UNIFORM_ALIGN: usize = 256;
 
-pub trait OpMetadata: Sized + ShaderType + WriteInto {
+pub trait OpMetadata: Sized + ShaderType + WriteInto + std::fmt::Debug {
     const __IS_VALID_META: () = {
         assert!(std::mem::size_of::<Self>() <= UNIFORM_ALIGN);
     };
