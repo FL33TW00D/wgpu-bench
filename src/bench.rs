@@ -78,10 +78,7 @@ pub fn benchmark<K: Kernel>(c: &mut Criterion<&WgpuTimer>, timer: &WgpuTimer, ke
     let workload = K::workload();
 
     let mut group = c.benchmark_group("wgpu kernel");
-    group.warm_up_time(Duration::from_secs(1)); //We must limit to 2 seconds to avoid running
-    group.measurement_time(Duration::from_secs(1)); //We must limit to 2 seconds to avoid running
-                                                    //out of GPU counters
-                                                    //https://github.com/bheisler/criterion.rs/issues/342
+    group.warm_up_time(Duration::from_secs(2)); //Limit warmup time to avoid MAX_QUERIES limit
     group.bench_function(BenchmarkId::new(K::name(), 0), |b| {
         b.iter(|| {
             let mut encoder = handle
