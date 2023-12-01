@@ -4,8 +4,8 @@ use smallvec::smallvec;
 
 use criterion::{criterion_group, criterion_main, Criterion};
 use wgpu_bencher::{
-    empty_buffer, rand_gpu_buffer, wgc, wgs, GPUHandle, Kernel, KernelContextExt, OpMetadata,
-    Shape, WgpuTimer, Workload,
+    shape, wgc, wgs, CPUTensor, GPUHandle, GPUTensor, Kernel, KernelContextExt, OpMetadata,
+    WgpuTimer, Workload,
 };
 
 lazy_static::lazy_static! {
@@ -24,14 +24,6 @@ pub struct LayerNormMeta {
 
 impl OpMetadata for LayerNormMeta {}
 
-#[derive(derive_new::new)]
-pub struct LayerNormProblem {
-    X: Shape,
-    S: Shape,
-    B: Shape,
-    Y: Shape,
-}
-
 #[derive(derive_new::new, Debug)]
 pub struct LayerNorm {
     eps: f32,
@@ -39,13 +31,12 @@ pub struct LayerNorm {
 
 impl Kernel for LayerNorm {
     type Metadata = LayerNormMeta;
-    type Problem = LayerNormProblem;
 
     fn name() -> &'static str {
         "LayerNorm"
     }
 
-    fn source(workload: Workload) -> String {
+    fn source(workload: &Workload) -> String {
         let mut tera = tera::Tera::default();
         let mut context = tera::Context::new();
         tera.add_raw_template(
@@ -53,40 +44,28 @@ impl Kernel for LayerNorm {
             include_str!("../kernels/layernorm_vec4.wgsl"),
         )
         .unwrap();
-        context.insert_workload(&workload);
+        context.insert_workload(workload);
         tera.render(Self::name(), &context).unwrap()
     }
 
-    fn problem() -> Self::Problem {
-        LayerNormProblem::new(
-            Shape::new(smallvec![1024, 1024]),
-            Shape::new(smallvec![1024]),
-            Shape::new(smallvec![1024]),
-            Shape::new(smallvec![1024, 1024]),
-        )
+    fn tensors(handle: &GPUHandle) -> Vec<GPUTensor> {
+        let input = CPUTensor::rand::<f32>(shape![4, 1024, 1024]).into_gpu(handle);
+        let scale = CPUTensor::rand::<f32>(shape![1024]).into_gpu(handle);
+        let bias = CPUTensor::rand::<f32>(shape![1024]).into_gpu(handle);
+        let output = CPUTensor::zeros::<f32>(shape![4, 1024, 1024]).into_gpu(handle);
+        vec![input, scale, bias, output]
     }
 
-    fn buffers(&self, handle: &GPUHandle) -> Vec<wgpu::Buffer> {
-        let problem = Self::problem();
-        let X = rand_gpu_buffer::<f32>(handle, problem.X.numel());
-        let S = rand_gpu_buffer::<f32>(handle, problem.S.numel());
-        let B = rand_gpu_buffer::<f32>(handle, problem.B.numel());
-        let Y = empty_buffer::<f32>(handle.device(), problem.Y.numel());
-        vec![X, S, B, Y]
+    fn workload(tensors: &[GPUTensor]) -> Workload {
+        let input = &tensors[0];
+        let [_B, _N, M] = input.shape().try_into().unwrap();
+        Workload::new(wgs![128, 1, 1], wgc![M as _, 1, 1])
     }
 
-    fn metadata(&self) -> Self::Metadata {
-        let problem = Self::problem();
-        let N = problem.X[0];
-        let M = problem.X[1];
-        let ND4 = N / 4;
-        LayerNormMeta::new(N as u32, M as u32, ND4 as u32, self.eps)
-    }
-
-    fn workload() -> Workload {
-        let problem = Self::problem();
-        let M = problem.X[1];
-        Workload::new(wgs![128 / 4, 1, 1], wgc![M as _, 1, 1])
+    fn metadata(&self, tensors: &[GPUTensor]) -> Self::Metadata {
+        let input = &tensors[0];
+        let [_B, N, M] = input.shape().try_into().unwrap();
+        LayerNormMeta::new(N as _, M as _, (N / 4) as _, self.eps)
     }
 }
 

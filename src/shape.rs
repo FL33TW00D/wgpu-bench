@@ -60,3 +60,25 @@ impl std::ops::Index<RangeTo<usize>> for Shape {
         &self.0[index]
     }
 }
+
+macro_rules! impl_try_into {
+    ($($n:literal),*) => {
+        $(
+            impl TryInto<[usize; $n]> for &Shape {
+                type Error = &'static str;
+
+                fn try_into(self) -> Result<[usize; $n], Self::Error> {
+                    if self.0.len() != $n {
+                        Err(concat!("Shape must have rank ", stringify!($n)))
+                    } else {
+                        let mut shape = [1; $n];
+                        shape[..self.0.len()].copy_from_slice(&self.0);
+                        Ok(shape)
+                    }
+                }
+            }
+        )*
+    };
+}
+
+impl_try_into!(1, 2, 3, 4);

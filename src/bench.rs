@@ -2,7 +2,7 @@ use std::{borrow::Cow, time::Duration};
 
 use criterion::{BenchmarkId, Criterion};
 
-use crate::{GPUHandle, OpMetadata, WgpuTimer, Workload};
+use crate::{GPUHandle, GPUTensor, OpMetadata, WgpuTimer, Workload};
 
 pub trait KernelContextExt {
     fn insert_workload(&mut self, workload: &Workload);
@@ -16,25 +16,48 @@ impl KernelContextExt for tera::Context {
     }
 }
 
+/// A trait for kernels that can be benchmarked
+///
+/// Each trait needs associated metadata that will be passed to the kernel.
+/// The `tensors` method is used to define the input and outputs of the kernel.
 pub trait Kernel: std::fmt::Debug {
     type Metadata: OpMetadata;
-    type Problem;
     fn name() -> &'static str;
-    fn workload() -> Workload;
-    fn source(workload: Workload) -> String;
-    fn problem() -> Self::Problem;
-    fn metadata(&self) -> Self::Metadata;
-    fn buffers(&self, handle: &GPUHandle) -> Vec<wgpu::Buffer>;
+    fn source(workload: &Workload) -> String;
+    fn tensors(handle: &GPUHandle) -> Vec<GPUTensor>;
+    fn workload(tensors: &[GPUTensor]) -> Workload;
+    fn metadata(&self, tensors: &[GPUTensor]) -> Self::Metadata;
 }
 
 pub fn benchmark<K: Kernel>(c: &mut Criterion<&WgpuTimer>, timer: &WgpuTimer, kernel: K) {
     let handle = timer.handle();
+
+    let tensors = K::tensors(handle);
+    let workload = K::workload(&tensors);
+
+    let mut buffers = tensors
+        .iter()
+        .map(|t| t.storage().inner())
+        .collect::<Vec<_>>();
+
+    let uniform_buffer = kernel.metadata(&tensors).into_buffer(handle);
+    buffers.push(&uniform_buffer);
+
+    let bind_group_entries = buffers
+        .iter()
+        .enumerate()
+        .map(|(i, buffer)| wgpu::BindGroupEntry {
+            binding: (i % 4) as u32,
+            resource: buffer.as_entire_binding(),
+        })
+        .collect::<Vec<_>>();
+
     let shader_module = unsafe {
         handle
             .device()
             .create_shader_module_unchecked(wgpu::ShaderModuleDescriptor {
                 label: None,
-                source: wgpu::ShaderSource::Wgsl(Cow::Borrowed(&K::source(K::workload()))),
+                source: wgpu::ShaderSource::Wgsl(Cow::Borrowed(&K::source(&workload))),
             })
     };
 
@@ -46,20 +69,6 @@ pub fn benchmark<K: Kernel>(c: &mut Criterion<&WgpuTimer>, timer: &WgpuTimer, ke
             module: &shader_module,
             entry_point: "main",
         });
-
-    let mut buffers = kernel.buffers(handle);
-    let meta = kernel.metadata();
-    let uniform_buffer = meta.into_buffer(handle);
-    buffers.push(uniform_buffer);
-
-    let bind_group_entries = buffers
-        .iter()
-        .enumerate()
-        .map(|(i, buffer)| wgpu::BindGroupEntry {
-            binding: (i % 4) as u32,
-            resource: buffer.as_entire_binding(),
-        })
-        .collect::<Vec<_>>();
 
     let bind_groups = bind_group_entries
         .chunks(4)
@@ -74,8 +83,6 @@ pub fn benchmark<K: Kernel>(c: &mut Criterion<&WgpuTimer>, timer: &WgpuTimer, ke
                 })
         })
         .collect::<Vec<_>>();
-
-    let workload = K::workload();
 
     let mut group = c.benchmark_group("wgpu kernel");
     group.warm_up_time(Duration::from_secs(2)); //Limit warmup time to avoid MAX_QUERIES limit

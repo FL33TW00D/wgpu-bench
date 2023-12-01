@@ -7,6 +7,7 @@ use rand::rngs::SmallRng;
 use crate::storage::{CPUStorage, GPUStorage};
 use crate::DType;
 use crate::DataType;
+use crate::GPUHandle;
 use crate::{Shape, Storage};
 
 #[derive(Clone)]
@@ -67,6 +68,16 @@ impl CPUTensor {
             .map(|_| T::from(between.sample(&mut rng) / T::from(50).unwrap()).unwrap())
             .collect::<Vec<_>>();
         Self::from_slice(&rand_vec, shape)
+    }
+
+    pub fn zeros<D: DataType>(shape: Shape) -> Self {
+        let data = vec![D::zero(); shape.numel()];
+        Self::from_slice(&data, shape)
+    }
+
+    pub fn into_gpu(self, handle: &GPUHandle) -> GPUTensor {
+        let storage = self.storage.to_gpu(handle);
+        GPUTensor::new(self.dt, self.shape.clone(), storage)
     }
 }
 

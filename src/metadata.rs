@@ -1,6 +1,6 @@
 use encase::{private::WriteInto, ShaderType, UniformBuffer};
 
-use crate::GPUHandle;
+use crate::{GPUBuffer, GPUHandle};
 
 pub const UNIFORM_ALIGN: usize = 256;
 
@@ -13,7 +13,7 @@ pub trait OpMetadata: Sized + ShaderType + WriteInto + std::fmt::Debug {
         std::mem::size_of::<Self>()
     }
 
-    fn into_buffer(&self, handle: &GPUHandle) -> wgpu::Buffer {
+    fn into_buffer(&self, handle: &GPUHandle) -> GPUBuffer {
         let mut cpu_uniform = UniformBuffer::new(Vec::with_capacity(self.n_bytes()));
 
         cpu_uniform.write(self).unwrap();
@@ -28,6 +28,6 @@ pub trait OpMetadata: Sized + ShaderType + WriteInto + std::fmt::Debug {
         handle
             .queue()
             .write_buffer(&buffer, 0, bytemuck::cast_slice(&cpu_uniform.into_inner()));
-        buffer
+        buffer.into()
     }
 }

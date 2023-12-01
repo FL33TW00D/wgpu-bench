@@ -266,6 +266,14 @@ impl ValueFormatter for WgpuTimerFormatter {
     }
 }
 
+#[macro_export]
+macro_rules! shape {
+    ($($x:expr),*$(,)*) => ({
+        use smallvec::smallvec;
+        $crate::Shape::new(smallvec![$($x,)*])
+    });
+}
+
 #[cfg(test)]
 mod tests {
     use crate::*;
