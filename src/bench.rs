@@ -27,32 +27,8 @@ pub trait Kernel: std::fmt::Debug {
     fn buffers(&self, handle: &GPUHandle) -> Vec<wgpu::Buffer>;
 }
 
-#[inline]
-fn dispatch(
-    handle: &GPUHandle,
-    pipeline: &wgpu::ComputePipeline,
-    bind_groups: &[wgpu::BindGroup],
-    workload: &Workload,
-) -> wgpu::CommandBuffer {
-    let mut encoder = handle
-        .device()
-        .create_command_encoder(&wgpu::CommandEncoderDescriptor { label: None });
-    {
-        let mut cpass = encoder.begin_compute_pass(&wgpu::ComputePassDescriptor {
-            label: None,
-            timestamp_writes: None,
-        });
-        for (i, bind_group) in bind_groups.iter().enumerate() {
-            cpass.set_bind_group(i as _, bind_group, &[]);
-        }
-        cpass.set_pipeline(&pipeline);
-        let (x, y, z) = workload.count().as_tuple();
-        cpass.dispatch_workgroups(x, y, z);
-    }
-    encoder.finish()
-}
-
-pub fn benchmark<K: Kernel>(c: &mut Criterion<&WgpuTimer>, handle: &GPUHandle, kernel: K) {
+pub fn benchmark<K: Kernel>(c: &mut Criterion<&WgpuTimer>, timer: &WgpuTimer, kernel: K) {
+    let handle = timer.handle();
     let shader_module = unsafe {
         handle
             .device()
@@ -102,18 +78,31 @@ pub fn benchmark<K: Kernel>(c: &mut Criterion<&WgpuTimer>, handle: &GPUHandle, k
     let workload = K::workload();
 
     let mut group = c.benchmark_group("wgpu kernel");
-    group.measurement_time(Duration::from_secs(2)); //We must limit to 2 seconds to avoid running
+    group.warm_up_time(Duration::from_secs(1)); //We must limit to 2 seconds to avoid running
+    group.measurement_time(Duration::from_secs(1)); //We must limit to 2 seconds to avoid running
                                                     //out of GPU counters
                                                     //https://github.com/bheisler/criterion.rs/issues/342
     group.bench_function(BenchmarkId::new(K::name(), 0), |b| {
-        b.iter_batched(
-            || dispatch(handle, &pipeline, &bind_groups, &workload),
-            |cmd| {
-                handle.queue().submit(Some(cmd));
-                handle.device().poll(wgpu::Maintain::Wait);
-            },
-            criterion::BatchSize::SmallInput,
-        )
+        b.iter(|| {
+            let mut encoder = handle
+                .device()
+                .create_command_encoder(&wgpu::CommandEncoderDescriptor { label: None });
+            {
+                let mut cpass = encoder.begin_compute_pass(&wgpu::ComputePassDescriptor {
+                    label: None,
+                    timestamp_writes: Some(timer.timestamp_writes()),
+                });
+                for (i, bind_group) in bind_groups.iter().enumerate() {
+                    cpass.set_bind_group(i as _, bind_group, &[]);
+                }
+                cpass.set_pipeline(&pipeline);
+                let (x, y, z) = workload.count().as_tuple();
+                cpass.dispatch_workgroups(x, y, z);
+            }
+            handle.queue().submit(Some(encoder.finish()));
+            handle.device().poll(wgpu::Maintain::Wait);
+            timer.increment_query();
+        });
     });
     group.finish()
 }
