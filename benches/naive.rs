@@ -52,10 +52,10 @@ impl Kernel for LayerNorm {
     }
 
     fn tensors() -> Vec<CPUTensor> {
-        let input = CPUTensor::rand::<f32>(shape![4, 1024, 1024]);
+        let input = CPUTensor::rand::<f32>(shape![1, 1024, 1024]);
         let scale = CPUTensor::rand::<f32>(shape![1024]);
         let bias = CPUTensor::rand::<f32>(shape![1024]);
-        let output = CPUTensor::zeros::<f32>(shape![4, 1024, 1024]);
+        let output = CPUTensor::zeros::<f32>(shape![1, 1024, 1024]);
         vec![input, scale, bias, output]
     }
 

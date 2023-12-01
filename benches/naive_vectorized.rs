@@ -7,8 +7,8 @@ use smallvec::smallvec;
 
 use criterion::{criterion_group, criterion_main, Criterion};
 use wgpu_bencher::{
-    shape, wgc, wgs, CPUTensor, GPUHandle, Kernel, KernelContextExt, OpMetadata, WgpuTimer,
-    Workload,
+    dispatch_validate, shape, wgc, wgs, CPUTensor, GPUHandle, Kernel, KernelContextExt, OpMetadata,
+    WgpuTimer, Workload,
 };
 
 lazy_static::lazy_static! {
@@ -44,7 +44,7 @@ impl Kernel for LayerNorm {
         let mut context = tera::Context::new();
         tera.add_raw_template(
             &Self::name(),
-            include_str!("../kernels/layernorm_scalar.wgsl"),
+            include_str!("../kernels/layernorm_vec4.wgsl"),
         )
         .unwrap();
         context.insert_workload(workload);
@@ -52,17 +52,17 @@ impl Kernel for LayerNorm {
     }
 
     fn tensors() -> Vec<CPUTensor> {
-        let input = CPUTensor::rand::<f32>(shape![4, 1024, 1024]);
+        let input = CPUTensor::rand::<f32>(shape![1, 1024, 1024]);
         let scale = CPUTensor::rand::<f32>(shape![1024]);
         let bias = CPUTensor::rand::<f32>(shape![1024]);
-        let output = CPUTensor::zeros::<f32>(shape![4, 1024, 1024]);
+        let output = CPUTensor::zeros::<f32>(shape![1, 1024, 1024]);
         vec![input, scale, bias, output]
     }
 
     fn workload(tensors: &[CPUTensor]) -> Workload {
         let input = &tensors[0];
         let [_B, _N, M] = input.shape().try_into().unwrap();
-        Workload::new(wgs![128, 1, 1], wgc![M as _, 1, 1])
+        Workload::new(wgs![64, 1, 1], wgc![M as _, 1, 1])
     }
 
     fn metadata(&self, tensors: &[CPUTensor]) -> Self::Metadata {
@@ -73,7 +73,7 @@ impl Kernel for LayerNorm {
 
     fn validate(&self, tensors: &[CPUTensor]) {
         let (input, scale, bias) = (&tensors[0], &tensors[1], &tensors[2]);
-        let torch_result = Python::with_gil(|py| {
+        let ground = Python::with_gil(|py| {
             let (py_input, py_scale, py_bias) = (
                 input.to_py::<f32>(&py),
                 scale.to_py::<f32>(&py),
@@ -88,7 +88,9 @@ impl Kernel for LayerNorm {
             };
             CPUTensor::from(result.get_with_gil::<&PyArrayDyn<f32>>(py, "result"))
         });
-        println!("torch_result: {:?}", torch_result);
+        let mut gpu_tensors = dispatch_validate(&TIMER.handle(), self);
+        let cpu_result = gpu_tensors.remove(3).into_cpu(&TIMER.handle()).unwrap();
+        ground.all_close(&cpu_result, 1e-5, 1e-5).unwrap();
     }
 }
 
