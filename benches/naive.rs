@@ -7,8 +7,8 @@ use smallvec::smallvec;
 
 use criterion::{criterion_group, criterion_main, Criterion};
 use wgpu_bencher::{
-    shape, wgc, wgs, CPUTensor, GPUHandle, Kernel, KernelContextExt, OpMetadata, WgpuTimer,
-    Workload,
+    dispatch_validate, shape, wgc, wgs, CPUTensor, GPUHandle, Kernel, KernelContextExt, OpMetadata,
+    WgpuTimer, Workload,
 };
 
 lazy_static::lazy_static! {
@@ -88,7 +88,9 @@ impl Kernel for LayerNorm {
             };
             CPUTensor::from(result.get_with_gil::<&PyArrayDyn<f32>>(py, "result"))
         });
-        println!("Pytorch: \n{}", ground);
+        let mut gpu_tensors = dispatch_validate(&TIMER.handle(), self);
+        let cpu_result = gpu_tensors.remove(3).into_cpu(&TIMER.handle()).unwrap();
+        ground.all_close(&cpu_result, 1e-5, 1e-5).unwrap();
     }
 }
 

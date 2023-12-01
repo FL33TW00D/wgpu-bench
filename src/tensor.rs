@@ -1,3 +1,4 @@
+use bytemuck::NoUninit;
 use ndarray::Dimension;
 use numpy::ndarray::{ArrayD, ArrayViewD};
 use rand::{
@@ -7,6 +8,7 @@ use rand::{
 };
 
 use numpy::PyArrayDyn;
+use wgpu::BufferUsages;
 
 use crate::storage::{CPUStorage, GPUStorage};
 use crate::DType;
@@ -20,6 +22,9 @@ pub struct Tensor<S: Storage> {
     shape: Shape,
     storage: S,
 }
+
+unsafe impl<S: Storage> Send for Tensor<S> {}
+unsafe impl<S: Storage> Sync for Tensor<S> {}
 
 impl<S: Storage> Tensor<S> {
     pub fn new(dt: DType, shape: Shape, storage: S) -> Self {
@@ -44,6 +49,11 @@ impl<S: Storage> Tensor<S> {
 
     pub fn n_bytes(&self) -> usize {
         self.shape().numel() * self.dt().size_of()
+    }
+
+    pub fn into_inner(self) -> (DType, Shape, S) {
+        let Self { dt, shape, storage } = self;
+        (dt, shape, storage)
     }
 }
 
@@ -225,3 +235,43 @@ impl<T: DataType> From<ArrayD<T>> for CPUTensor {
 }
 
 pub type GPUTensor = Tensor<GPUStorage>;
+
+impl GPUTensor {
+    fn read_to_host<A: NoUninit>(shape: Shape, dt: DType, bytes: &[A]) -> CPUTensor {
+        match dt {
+            DType::F32 => CPUTensor::from_slice::<f32>(bytemuck::cast_slice(bytes), shape),
+            DType::I32 => CPUTensor::from_slice::<i32>(bytemuck::cast_slice(bytes), shape),
+            DType::U32 => CPUTensor::from_slice::<u32>(bytemuck::cast_slice(bytes), shape),
+        }
+    }
+
+    fn into_cpu_inner(self, handle: &GPUHandle) -> anyhow::Result<CPUTensor> {
+        let (dt, shape, storage) = self.into_inner();
+        if !storage.usage().contains(BufferUsages::COPY_SRC) {
+            panic!("Attempted to read GPU tensor to host without COPY_SRC usage")
+        }
+        let buffer_slice = storage.slice(..);
+        let (tx, rx) = std::sync::mpsc::channel();
+
+        wgpu::util::DownloadBuffer::read_buffer(
+            handle.device(),
+            handle.queue(),
+            &buffer_slice,
+            move |buffer| {
+                // Called on download completed
+                tx.send(match buffer {
+                    Ok(db) => Ok(Self::read_to_host(shape, dt, &db)),
+                    Err(error) => panic!("Failed to read GPU tensor to host: {:?}", error),
+                })
+                .unwrap();
+            },
+        );
+        handle.device().poll(wgpu::Maintain::Wait);
+        rx.recv().unwrap()
+    }
+
+    ///Consumes the GPU tensor and returns a CPU tensor
+    pub fn into_cpu(self, handle: &GPUHandle) -> anyhow::Result<CPUTensor> {
+        self.into_cpu_inner(handle)
+    }
+}
