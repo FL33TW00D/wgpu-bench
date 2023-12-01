@@ -149,6 +149,15 @@ impl WgpuTimer {
     }
 }
 
+/// Criterion + wgpu
+/// To avoid recording overhead, we use `wgpu::ComputePassTimestampWrites`, which
+/// records the execution of the compute pass only.
+///
+/// Each benchmark iteration is a single compute pass.
+/// To get the total execution time of the benchmark run, we sum the elapsed time
+/// for each compute pass.
+///
+/// This approach is not perfect and seems quite noisy.
 impl Measurement for &WgpuTimer {
     type Intermediate = u32; // Index of the start query
 
