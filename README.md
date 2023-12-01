@@ -1,8 +1,5 @@
 # wgpu-bench
 
-wgpu + criterion
+Benchmark any WebGPU Kernel.
 
-To do:
-- [] Validate against PT prior to running benchmark
-- [] CPU + GPU Tensor with printing
-- [] Simplify Kernel trait
+Check out `/benches` for an example, simply implement the Kernel trait and boom!
