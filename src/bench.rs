@@ -81,6 +81,8 @@ pub fn benchmark<K: Kernel>(c: &mut Criterion<&WgpuTimer>, timer: &WgpuTimer, ke
     group.warm_up_time(Duration::from_secs(2)); //Limit warmup time to avoid MAX_QUERIES limit
     group.bench_function(BenchmarkId::new(K::name(), 0), |b| {
         b.iter(|| {
+            //We aren't worried about the overhead in here,
+            //we only track the actual kernel execution time
             let mut encoder = handle
                 .device()
                 .create_command_encoder(&wgpu::CommandEncoderDescriptor { label: None });

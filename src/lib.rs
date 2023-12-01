@@ -100,10 +100,10 @@ impl WgpuTimer {
 
     pub fn resolve_pass(&self, encoder: &mut wgpu::CommandEncoder, pass_query: QueryPair) {
         let resolution_range = pass_query.into();
-        println!("Resolution range: {:?}", resolution_range);
+        log::info!("Resolution range: {:?}", resolution_range);
         encoder.resolve_query_set(&self.query_set, resolution_range, &self.resolve_buffer, 0);
         let size = pass_query.size();
-        println!("Size: {:?}", size);
+        log::info!("Resolution size in bytes: {:?}", size);
         encoder.copy_buffer_to_buffer(&self.resolve_buffer, 0, &self.destination_buffer, 0, size);
     }
 
@@ -166,12 +166,12 @@ impl Measurement for &WgpuTimer {
                       // Must be multiplied by the timestamp period to get nanoseconds
 
     fn start(&self) -> Self::Intermediate {
-        println!("\nQuery at start of pass: {:?}", self.current_query());
+        log::info!("\nQuery at start of pass: {:?}", self.current_query());
         0
     }
 
     fn end(&self, start_index: Self::Intermediate) -> Self::Value {
-        println!("\nQuery at end of pass: {:?}", self.current_query());
+        log::info!("\nQuery at end of pass: {:?}", self.current_query());
         let mut encoder = self
             .handle
             .device()
@@ -183,7 +183,7 @@ impl Measurement for &WgpuTimer {
             end: self.current_query().end - 2, //we have to decrement here because we increment at
                                                //the end of each iter
         };
-        println!("Pass range: {:?}", pass_query);
+        log::info!("Pass range: {:?}", pass_query);
 
         self.resolve_pass(&mut encoder, pass_query.clone());
         self.handle().queue().submit(Some(encoder.finish()));
@@ -195,11 +195,11 @@ impl Measurement for &WgpuTimer {
         self.handle.device().poll(wgpu::Maintain::Wait);
         let timestamps: Vec<u64> = {
             let byte_range = pass_query.start_address()..pass_query.end_address();
-            println!("Byte range: {:?}", byte_range);
+            log::info!("Byte range: {:?}", byte_range);
             let timestamp_view = self.destination_buffer.slice(byte_range).get_mapped_range();
             (*bytemuck::cast_slice(&timestamp_view)).to_vec()
         };
-        println!("Timestamps: {:?}", timestamps);
+        log::info!("Timestamps: {:?}", timestamps);
         self.destination_buffer.unmap();
         self.current_query.set(QueryPair::first());
         self.hardware_elapsed(&timestamps)
