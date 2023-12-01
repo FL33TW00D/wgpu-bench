@@ -3,6 +3,8 @@ mod data;
 mod handle;
 mod metadata;
 mod shape;
+mod storage;
+mod tensor;
 mod workload;
 
 use std::{cell::Cell, ops::Range};
@@ -12,6 +14,8 @@ pub use data::*;
 pub use handle::*;
 pub use metadata::*;
 pub use shape::*;
+pub use storage::*;
+pub use tensor::*;
 pub use workload::*;
 
 use criterion::{

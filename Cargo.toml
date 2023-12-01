@@ -21,7 +21,7 @@ rand = "0.8.5"
 smallvec = "1.11.2"
 tabled = "0.14.0"
 criterion = "0.3"
-wgpu = "0.18.0"
+wgpu = {version="0.18.0", features=["expose-ids"]}
 pollster = "0.3.0"
 lazy_static = "1.4.0"
 encase = "0.6.1"
