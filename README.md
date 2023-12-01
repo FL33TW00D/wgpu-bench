@@ -12,3 +12,10 @@ LayerNormScalar     time:   [149355.4133 ns 156099.6010 ns 164338.7318 ns]
 LayerNormVectorized time:   [144526.6691 ns 145412.3884 ns 146351.1508 ns]
                     change: [-6.1644% -2.2516% +1.3739%] (p = 0.26 > 0.05)
 ```
+
+## TODO
+
+- [ ] Add throughput measurements
+- [ ] Benchmark comparisons? Shared code between similar kernels?
+- [ ] Simplify Kernel trait
+- [ ] Cleaning & Polishing 🧽
