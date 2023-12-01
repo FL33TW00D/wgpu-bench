@@ -1,6 +1,6 @@
 use std::{borrow::Cow, time::Duration};
 
-use criterion::{BenchmarkId, Criterion};
+use criterion::{BenchmarkId, Criterion, Throughput};
 
 use crate::{CPUTensor, GPUBuffer, GPUHandle, GPUTensor, OpMetadata, WgpuTimer, Workload};
 
@@ -138,7 +138,12 @@ pub fn tensors_to_bind_groups(
         .collect::<Vec<_>>()
 }
 
-pub fn benchmark<K: Kernel>(c: &mut Criterion<&WgpuTimer>, timer: &WgpuTimer, kernel: K) {
+pub fn benchmark<K: Kernel>(
+    c: &mut Criterion<&WgpuTimer>,
+    timer: &WgpuTimer,
+    kernel: K,
+    bytes_per_iter: usize,
+) {
     let handle = timer.handle();
     let tensors = K::tensors();
     kernel.validate(&tensors);
@@ -154,6 +159,7 @@ pub fn benchmark<K: Kernel>(c: &mut Criterion<&WgpuTimer>, timer: &WgpuTimer, ke
     let bind_groups = tensors_to_bind_groups(handle, &gpu_tensors, uniform_buffer, &pipeline);
 
     let mut group = c.benchmark_group("wgpu kernel");
+    group.throughput(Throughput::Bytes(bytes_per_iter as u64));
     group.warm_up_time(Duration::from_secs(2)); //Limit warmup time to avoid MAX_QUERIES limit
     group.bench_function(BenchmarkId::new(K::name(), 0), |b| {
         b.iter(|| {

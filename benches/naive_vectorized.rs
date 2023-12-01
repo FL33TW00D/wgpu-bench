@@ -95,7 +95,12 @@ impl Kernel for LayerNorm {
 }
 
 pub fn benchmark(c: &mut Criterion<&WgpuTimer>) {
-    wgpu_bencher::benchmark(c, &TIMER, LayerNorm::new(1e-5))
+    wgpu_bencher::benchmark(
+        c,
+        &TIMER,
+        LayerNorm::new(1e-5),
+        1024 * 1024 * std::mem::size_of::<f32>(),
+    )
 }
 
 criterion_group!(
