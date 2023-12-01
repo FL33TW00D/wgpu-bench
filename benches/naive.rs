@@ -1,5 +1,7 @@
 #![allow(non_snake_case)]
 use encase::ShaderType;
+use inline_python::python;
+use pyo3::Python;
 use smallvec::smallvec;
 
 use criterion::{criterion_group, criterion_main, Criterion};
@@ -66,6 +68,27 @@ impl Kernel for LayerNorm {
         let input = &tensors[0];
         let [_B, N, M] = input.shape().try_into().unwrap();
         LayerNormMeta::new(N as _, M as _, (N / 4) as _, self.eps)
+    }
+
+    fn validate(&self, tensors: &[GPUTensor]) {
+        let input = &tensors[0];
+        let scale = &tensors[1];
+        let bias = &tensors[2];
+        let torch_result = Python::with_gil(|py| {
+            let (py_input, py_scale, py_bias) = (
+                input.to_py::<f32>(&py),
+                scale.to_py::<f32>(&py),
+                bias.to_py::<f32>(&py),
+            );
+            let result: Context = python! {
+                import torch
+                import torch.nn.functional as F
+
+                (input, scale, bias) = (torch.from_numpy('py_input), torch.from_numpy('py_scale), torch.from_numpy('py_bias))
+                result = F.layer_norm(input, (input.shape[-1],), weight=scale, bias=bias).numpy()
+            };
+            CPUTensor::from(result.get_with_gil::<&PyArrayDyn<f32>>(py, "result"))
+        });
     }
 }
 

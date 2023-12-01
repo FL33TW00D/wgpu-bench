@@ -1,8 +1,11 @@
-use rand::distributions::uniform::SampleUniform;
-use rand::distributions::Uniform;
-use rand::prelude::Distribution;
-use rand::prelude::SeedableRng;
-use rand::rngs::SmallRng;
+use numpy::ndarray::{ArrayD, ArrayViewD};
+use rand::{
+    distributions::{uniform::SampleUniform, Uniform},
+    prelude::{Distribution, SeedableRng},
+    rngs::SmallRng,
+};
+
+use numpy::PyArrayDyn;
 
 use crate::storage::{CPUStorage, GPUStorage};
 use crate::DType;
@@ -22,6 +25,10 @@ impl<S: Storage> Tensor<S> {
         Self { dt, shape, storage }
     }
 
+    pub fn dt(&self) -> DType {
+        self.dt
+    }
+
     pub fn shape(&self) -> &Shape {
         &self.shape
     }
@@ -32,6 +39,10 @@ impl<S: Storage> Tensor<S> {
 
     pub fn storage_mut(&mut self) -> &mut S {
         &mut self.storage
+    }
+
+    pub fn n_bytes(&self) -> usize {
+        self.shape().numel() * self.dt().size_of()
     }
 }
 
@@ -78,6 +89,58 @@ impl CPUTensor {
     pub fn into_gpu(self, handle: &GPUHandle) -> GPUTensor {
         let storage = self.storage.to_gpu(handle);
         GPUTensor::new(self.dt, self.shape.clone(), storage)
+    }
+
+    pub unsafe fn into_array_unchecked<D: DataType>(self) -> ArrayD<D> {
+        self.to_array_view_unchecked::<D>().to_owned()
+    }
+
+    pub unsafe fn to_array_view_unchecked<T: DataType>(&self) -> ArrayViewD<T> {
+        let inner = self.storage().inner();
+        if self.n_bytes() != 0 {
+            ArrayViewD::from_shape_ptr(self.shape().to_vec(), inner.0 as *const T)
+        } else {
+            ArrayViewD::from_shape(self.shape().to_vec(), &[]).unwrap()
+        }
+    }
+
+    pub fn to_py<'s, 'p: 's, T: DataType + numpy::Element>(
+        &'s self,
+        py: &'p pyo3::Python<'p>,
+    ) -> &PyArrayDyn<T> {
+        use numpy::PyArray;
+        PyArray::from_owned_array(*py, unsafe { self.clone().into_array_unchecked::<T>() })
+    }
+}
+
+impl<T: DataType + numpy::Element> From<&PyArrayDyn<T>> for CPUTensor {
+    fn from(array: &PyArrayDyn<T>) -> Self {
+        Self::from(array.to_owned_array())
+    }
+}
+
+impl<T: DataType + numpy::Element> From<PyArrayDyn<T>> for CPUTensor {
+    fn from(array: PyArrayDyn<T>) -> Self {
+        Self::from(array.to_owned_array())
+    }
+}
+
+impl<T: DataType> From<ArrayD<T>> for CPUTensor {
+    fn from(it: ArrayD<T>) -> Self {
+        if it.as_slice().is_some() {
+            let layout = std::alloc::Layout::from_size_align(
+                it.len() * std::mem::size_of::<T>(),
+                std::mem::align_of::<T>(),
+            )
+            .unwrap();
+            let shape = it.shape().into();
+            let vec = it.into_raw_vec().into_boxed_slice();
+            let data = Box::into_raw(vec) as *mut u8;
+
+            Tensor::new(T::dt(), shape, CPUStorage::new(data, layout))
+        } else {
+            panic!("Cannot convert numpy array with non-contiguous memory layout to tensor");
+        }
     }
 }
 

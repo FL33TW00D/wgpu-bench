@@ -16,10 +16,7 @@ impl KernelContextExt for tera::Context {
     }
 }
 
-/// A trait for kernels that can be benchmarked
-///
-/// Each trait needs associated metadata that will be passed to the kernel.
-/// The `tensors` method is used to define the input and outputs of the kernel.
+// Implemented by all kernels that want to be benchmarked
 pub trait Kernel: std::fmt::Debug {
     type Metadata: OpMetadata;
     fn name() -> &'static str;
@@ -27,6 +24,33 @@ pub trait Kernel: std::fmt::Debug {
     fn tensors(handle: &GPUHandle) -> Vec<GPUTensor>;
     fn workload(tensors: &[GPUTensor]) -> Workload;
     fn metadata(&self, tensors: &[GPUTensor]) -> Self::Metadata;
+    fn validate(&self, tensors: &[GPUTensor]) -> anyhow::Result<()>;
+}
+
+fn dispatch(
+    handle: &GPUHandle,
+    workload: &Workload,
+    bind_groups: &[wgpu::BindGroup],
+    pipeline: &wgpu::ComputePipeline,
+    timer: &WgpuTimer,
+) {
+    let mut encoder = handle
+        .device()
+        .create_command_encoder(&wgpu::CommandEncoderDescriptor { label: None });
+    {
+        let mut cpass = encoder.begin_compute_pass(&wgpu::ComputePassDescriptor {
+            label: None,
+            timestamp_writes: Some(timer.timestamp_writes()),
+        });
+        for (i, bind_group) in bind_groups.iter().enumerate() {
+            cpass.set_bind_group(i as _, bind_group, &[]);
+        }
+        cpass.set_pipeline(&pipeline);
+        let (x, y, z) = workload.count().as_tuple();
+        cpass.dispatch_workgroups(x, y, z);
+    }
+    handle.queue().submit(Some(encoder.finish()));
+    handle.device().poll(wgpu::Maintain::Wait);
 }
 
 pub fn benchmark<K: Kernel>(c: &mut Criterion<&WgpuTimer>, timer: &WgpuTimer, kernel: K) {
@@ -88,25 +112,7 @@ pub fn benchmark<K: Kernel>(c: &mut Criterion<&WgpuTimer>, timer: &WgpuTimer, ke
     group.warm_up_time(Duration::from_secs(2)); //Limit warmup time to avoid MAX_QUERIES limit
     group.bench_function(BenchmarkId::new(K::name(), 0), |b| {
         b.iter(|| {
-            //We aren't worried about the overhead in here,
-            //we only track the actual kernel execution time
-            let mut encoder = handle
-                .device()
-                .create_command_encoder(&wgpu::CommandEncoderDescriptor { label: None });
-            {
-                let mut cpass = encoder.begin_compute_pass(&wgpu::ComputePassDescriptor {
-                    label: None,
-                    timestamp_writes: Some(timer.timestamp_writes()),
-                });
-                for (i, bind_group) in bind_groups.iter().enumerate() {
-                    cpass.set_bind_group(i as _, bind_group, &[]);
-                }
-                cpass.set_pipeline(&pipeline);
-                let (x, y, z) = workload.count().as_tuple();
-                cpass.dispatch_workgroups(x, y, z);
-            }
-            handle.queue().submit(Some(encoder.finish()));
-            handle.device().poll(wgpu::Maintain::Wait);
+            dispatch(handle, &workload, &*bind_groups, &pipeline, timer);
             timer.increment_query();
         });
     });

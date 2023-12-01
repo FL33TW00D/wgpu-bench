@@ -17,6 +17,10 @@ impl Shape {
     pub fn numel(&self) -> usize {
         self.0.iter().product()
     }
+
+    pub fn to_vec(&self) -> Vec<usize> {
+        self.0.clone().into_vec()
+    }
 }
 
 impl std::fmt::Debug for Shape {
@@ -58,6 +62,12 @@ impl std::ops::Index<RangeTo<usize>> for Shape {
 
     fn index(&self, index: RangeTo<usize>) -> &Self::Output {
         &self.0[index]
+    }
+}
+
+impl From<&[usize]> for Shape {
+    fn from(slice: &[usize]) -> Self {
+        Shape(slice.into())
     }
 }
 
