@@ -1,5 +1,6 @@
 mod bench;
 mod data;
+mod dtype;
 mod handle;
 mod metadata;
 mod shape;
@@ -11,6 +12,7 @@ use std::{cell::Cell, ops::Range};
 
 pub use bench::*;
 pub use data::*;
+pub use dtype::*;
 pub use handle::*;
 pub use metadata::*;
 pub use shape::*;
