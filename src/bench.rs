@@ -1,4 +1,4 @@
-use std::borrow::Cow;
+use std::{borrow::Cow, time::Duration};
 
 use criterion::{BenchmarkId, Criterion};
 
@@ -102,6 +102,9 @@ pub fn benchmark<K: Kernel>(c: &mut Criterion<&WgpuTimer>, handle: &GPUHandle, k
     let workload = K::workload();
 
     let mut group = c.benchmark_group("wgpu kernel");
+    group.measurement_time(Duration::from_secs(2)); //We must limit to 2 seconds to avoid running
+                                                    //out of GPU counters
+                                                    //https://github.com/bheisler/criterion.rs/issues/342
     group.bench_function(BenchmarkId::new(K::name(), 0), |b| {
         b.iter_batched(
             || dispatch(handle, &pipeline, &bind_groups, &workload),

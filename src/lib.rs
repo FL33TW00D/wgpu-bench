@@ -158,7 +158,6 @@ impl Measurement for &WgpuTimer {
             .device()
             .create_command_encoder(&wgpu::CommandEncoderDescriptor { label: None });
         encoder.write_timestamp(self.query_set(), self.current_query().end);
-        println!("Wrote query {}", self.current_query().end);
         self.resolve_pass(&mut encoder);
         self.handle().queue().submit(Some(encoder.finish()));
         self.handle.device().poll(wgpu::Maintain::Wait);
