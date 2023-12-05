@@ -32,11 +32,14 @@ pub struct LayerNorm {
     eps: f32,
 }
 
+const PROB_M: usize = 1;
+const PROB_N: usize = 65536;
+
 impl Kernel for LayerNorm {
     type Metadata = LayerNormMeta;
 
     fn name() -> &'static str {
-        "LayerNormVectorized"
+        "LayerNormVectorizedOnePass"
     }
 
     fn source(workload: &Workload) -> String {
@@ -44,7 +47,7 @@ impl Kernel for LayerNorm {
         let mut context = tera::Context::new();
         tera.add_raw_template(
             &Self::name(),
-            include_str!("../kernels/layernorm_vec4.wgsl"),
+            include_str!("../kernels/layernorm_vec4_onepass.wgsl"),
         )
         .unwrap();
         context.insert_workload(workload);
@@ -52,10 +55,10 @@ impl Kernel for LayerNorm {
     }
 
     fn tensors() -> Vec<CPUTensor> {
-        let input = CPUTensor::rand::<f32>(shape![1, 2048, 2048]);
-        let scale = CPUTensor::rand::<f32>(shape![2048]);
-        let bias = CPUTensor::rand::<f32>(shape![2048]);
-        let output = CPUTensor::zeros::<f32>(shape![1, 2048, 2048]);
+        let input = CPUTensor::rand::<f32>(shape![1, PROB_M, PROB_N]);
+        let scale = CPUTensor::rand::<f32>(shape![PROB_N]);
+        let bias = CPUTensor::rand::<f32>(shape![PROB_N]);
+        let output = CPUTensor::zeros::<f32>(shape![1, PROB_M, PROB_N]);
         vec![input, scale, bias, output]
     }
 
@@ -99,7 +102,7 @@ pub fn benchmark(c: &mut Criterion<&WgpuTimer>) {
         c,
         &TIMER,
         LayerNorm::new(1e-5),
-        2048 * 2048 * std::mem::size_of::<f32>(),
+        PROB_M * PROB_N * std::mem::size_of::<f32>(),
     )
 }
 

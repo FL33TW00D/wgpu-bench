@@ -12,6 +12,10 @@ harness = false
 name = "naive_vectorized"
 harness = false
 
+[[bench]]
+name = "naive_vectorized_onepass"
+harness = false
+
 [dependencies]
 anyhow = "1.0.75"
 bytemuck = "1.14.0"

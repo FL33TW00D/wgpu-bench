@@ -84,7 +84,7 @@ fn main(
     let denom = sqrt(sigma + vec4<f32>(metadata.eps));
 
     for(var i: u32 = local_id.x; i < metadata.ND4; i += BLOCK_SIZE) {
-        let core = (X[anchor + i] - mu) / denom;
-        Y[anchor + i] = fma(core, S[i], B[i]); 
+        let val = (X[anchor + i] - mu) / denom;
+        Y[anchor + i] = fma(val, S[i], B[i]); 
     }
 }

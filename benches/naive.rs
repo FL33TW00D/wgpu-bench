@@ -19,8 +19,8 @@ lazy_static::lazy_static! {
 
 #[derive(ShaderType, derive_new::new, Debug)]
 pub struct LayerNormMeta {
-    N: u32,
     M: u32,
+    N: u32,
     ND4: u32,
     eps: f32,
 }
@@ -61,14 +61,14 @@ impl Kernel for LayerNorm {
 
     fn workload(tensors: &[CPUTensor]) -> Workload {
         let input = &tensors[0];
-        let [_B, _N, M] = input.shape().try_into().unwrap();
+        let [_B, M, _N] = input.shape().try_into().unwrap();
         Workload::new(wgs![128, 1, 1], wgc![M as _, 1, 1])
     }
 
     fn metadata(&self, tensors: &[CPUTensor]) -> Self::Metadata {
         let input = &tensors[0];
-        let [_B, N, M] = input.shape().try_into().unwrap();
-        LayerNormMeta::new(N as _, M as _, (N / 4) as _, self.eps)
+        let [_B, M, N] = input.shape().try_into().unwrap();
+        LayerNormMeta::new(M as _, N as _, (N / 4) as _, self.eps)
     }
 
     fn validate(&self, tensors: &[CPUTensor]) {
