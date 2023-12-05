@@ -52,10 +52,10 @@ impl Kernel for LayerNorm {
     }
 
     fn tensors() -> Vec<CPUTensor> {
-        let input = CPUTensor::rand::<f32>(shape![1, 1024, 1024]);
-        let scale = CPUTensor::rand::<f32>(shape![1024]);
-        let bias = CPUTensor::rand::<f32>(shape![1024]);
-        let output = CPUTensor::zeros::<f32>(shape![1, 1024, 1024]);
+        let input = CPUTensor::rand::<f32>(shape![1, 2048, 2048]);
+        let scale = CPUTensor::rand::<f32>(shape![2048]);
+        let bias = CPUTensor::rand::<f32>(shape![2048]);
+        let output = CPUTensor::zeros::<f32>(shape![1, 2048, 2048]);
         vec![input, scale, bias, output]
     }
 
@@ -99,7 +99,7 @@ pub fn benchmark(c: &mut Criterion<&WgpuTimer>) {
         c,
         &TIMER,
         LayerNorm::new(1e-5),
-        1024 * 1024 * std::mem::size_of::<f32>(),
+        2048 * 2048 * std::mem::size_of::<f32>(),
     )
 }
 

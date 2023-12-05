@@ -36,7 +36,7 @@ impl Kernel for LayerNorm {
     type Metadata = LayerNormMeta;
 
     fn name() -> &'static str {
-        "LayerNorm"
+        "LayerNormVectorized"
     }
 
     fn source(workload: &Workload) -> String {
@@ -52,17 +52,17 @@ impl Kernel for LayerNorm {
     }
 
     fn tensors() -> Vec<CPUTensor> {
-        let input = CPUTensor::rand::<f32>(shape![1, 1024, 1024]);
-        let scale = CPUTensor::rand::<f32>(shape![1024]);
-        let bias = CPUTensor::rand::<f32>(shape![1024]);
-        let output = CPUTensor::zeros::<f32>(shape![1, 1024, 1024]);
+        let input = CPUTensor::rand::<f32>(shape![1, 2048, 2048]);
+        let scale = CPUTensor::rand::<f32>(shape![2048]);
+        let bias = CPUTensor::rand::<f32>(shape![2048]);
+        let output = CPUTensor::zeros::<f32>(shape![1, 2048, 2048]);
         vec![input, scale, bias, output]
     }
 
     fn workload(tensors: &[CPUTensor]) -> Workload {
         let input = &tensors[0];
         let [_B, _N, M] = input.shape().try_into().unwrap();
-        Workload::new(wgs![64, 1, 1], wgc![M as _, 1, 1])
+        Workload::new(wgs![128, 1, 1], wgc![M as _, 1, 1])
     }
 
     fn metadata(&self, tensors: &[CPUTensor]) -> Self::Metadata {
@@ -99,7 +99,7 @@ pub fn benchmark(c: &mut Criterion<&WgpuTimer>) {
         c,
         &TIMER,
         LayerNorm::new(1e-5),
-        1024 * 1024 * std::mem::size_of::<f32>(),
+        2048 * 2048 * std::mem::size_of::<f32>(),
     )
 }
 

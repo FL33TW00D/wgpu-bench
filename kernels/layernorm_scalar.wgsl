@@ -20,42 +20,54 @@ struct Meta {
 @group(1) @binding(0)
 var<uniform> metadata: Meta;
 
-var<workgroup> smem: array<f32, {{ workgroup_size_x }}>; //max 16kb
+const BLOCK_SIZE: u32 = 128u;
+
+var<workgroup> smem: array<f32, BLOCK_SIZE>; //max 16kb
+
+fn block_sum(index: u32, stride: u32) {
+    if index < stride {
+        smem[index] += smem[index + stride];
+    }
+    workgroupBarrier();
+}
 
 fn mu(local_id: vec3<u32>, anchor: u32) -> f32 {
     var threadSum = 0f;
-    for (var i: u32 = local_id.x; i < metadata.N; i += {{ workgroup_size_x }}u) {
+    for (var i: u32 = local_id.x; i < metadata.N; i += BLOCK_SIZE) {
         threadSum += X[anchor + i];
     }
     smem[local_id.x] = threadSum;
     workgroupBarrier();
     
-    //Compute μ
-    for(var s = {{ workgroup_size_x }}u >> 1u; s > 0u; s >>= 1u) {
-        if(local_id.x < s) {
-            smem[local_id.x] += smem[local_id.x + s];
-        }
-        workgroupBarrier();
-    }
+    block_sum(local_id.x, 64u);
+    block_sum(local_id.x, 32u);
+    block_sum(local_id.x, 16u);
+    block_sum(local_id.x, 8u);
+    block_sum(local_id.x, 4u);
+    block_sum(local_id.x, 2u);
+    block_sum(local_id.x, 1u);
+
     return smem[0] / f32(metadata.N); 
 }
 
 fn sigma(local_id: vec3<u32>, anchor: u32, mu: f32) -> f32 {
     var threadSum = 0f;
     //Compute σ
-    for (var i: u32 = local_id.x; i < metadata.N; i += {{ workgroup_size_x }}u) {
+    for (var i: u32 = local_id.x; i < metadata.N; i += BLOCK_SIZE) {
         let val = X[anchor + i] - mu;
         threadSum += (val * val);
     }
     smem[local_id.x] = threadSum;
     workgroupBarrier();
     
-    for(var s = {{ workgroup_size_x }}u >> 1u; s > 0u; s >>= 1u) {
-        if(local_id.x < s) {
-            smem[local_id.x] += smem[local_id.x + s];
-        }
-        workgroupBarrier();
-    }
+    block_sum(local_id.x, 64u);
+    block_sum(local_id.x, 32u);
+    block_sum(local_id.x, 16u);
+    block_sum(local_id.x, 8u);
+    block_sum(local_id.x, 4u);
+    block_sum(local_id.x, 2u);
+    block_sum(local_id.x, 1u);
+
     return smem[0] / (f32(metadata.N));
 }
 
@@ -71,7 +83,7 @@ fn main(
 
     let denom = sqrt(sigma + metadata.eps);
 
-    for(var i: u32 = local_id.x; i < metadata.N; i += {{ workgroup_size_x }}u) {
+    for(var i: u32 = local_id.x; i < metadata.N; i += BLOCK_SIZE) {
         let core = (X[anchor + i] - mu) / denom;
         Y[anchor + i] = fma(core, S[i], B[i]); 
     }
