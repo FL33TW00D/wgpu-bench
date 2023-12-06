@@ -32,6 +32,9 @@ pub struct LayerNorm {
     eps: f32,
 }
 
+const PROB_M: usize = 2048;
+const PROB_N: usize = 2048;
+
 impl Kernel for LayerNorm {
     type Metadata = LayerNormMeta;
 
@@ -52,10 +55,10 @@ impl Kernel for LayerNorm {
     }
 
     fn tensors() -> Vec<CPUTensor> {
-        let input = CPUTensor::rand::<f32>(shape![1, 2048, 2048]);
-        let scale = CPUTensor::rand::<f32>(shape![2048]);
-        let bias = CPUTensor::rand::<f32>(shape![2048]);
-        let output = CPUTensor::zeros::<f32>(shape![1, 2048, 2048]);
+        let input = CPUTensor::rand::<f32>(shape![1, PROB_M, PROB_N]);
+        let scale = CPUTensor::rand::<f32>(shape![PROB_N]);
+        let bias = CPUTensor::rand::<f32>(shape![PROB_N]);
+        let output = CPUTensor::zeros::<f32>(shape![1, PROB_M, PROB_N]);
         vec![input, scale, bias, output]
     }
 
@@ -99,7 +102,7 @@ pub fn benchmark(c: &mut Criterion<&WgpuTimer>) {
         c,
         &TIMER,
         LayerNorm::new(1e-5),
-        2048 * 2048 * std::mem::size_of::<f32>(),
+        PROB_M * PROB_N * std::mem::size_of::<f32>(),
     )
 }
 

@@ -37,8 +37,8 @@ impl GPUHandle {
 
         let mut device_descriptor = wgpu::DeviceDescriptor {
             label: Some("rumble"),
-            features: Self::get_features(),
-            limits: Limits {
+            required_features: Self::get_features(),
+            required_limits: Limits {
                 max_buffer_size: (2 << 29) - 1,
                 max_storage_buffer_binding_size: (2 << 29) - 1,
                 ..Default::default()
@@ -48,7 +48,7 @@ impl GPUHandle {
         let (device, queue) = if let Err(e) = device_request {
             log::warn!("Failed to create device with error: {:?}", e);
             log::warn!("Trying again with reduced limits");
-            device_descriptor.limits = adapter.limits();
+            device_descriptor.required_limits = adapter.limits();
             let device_request = adapter.request_device(&device_descriptor, None).await;
             device_request.unwrap()
         } else {

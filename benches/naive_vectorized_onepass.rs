@@ -32,8 +32,8 @@ pub struct LayerNorm {
     eps: f32,
 }
 
-const PROB_M: usize = 1;
-const PROB_N: usize = 65536;
+const PROB_M: usize = 2048;
+const PROB_N: usize = 2048;
 
 impl Kernel for LayerNorm {
     type Metadata = LayerNormMeta;

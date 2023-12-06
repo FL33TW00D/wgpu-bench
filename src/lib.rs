@@ -241,6 +241,7 @@ impl ValueFormatter for WgpuTimerFormatter {
                 (*b as f64) / (1024.0 * 1024.0 * 1024.0) / (value * 1e-9)
             ),
             Throughput::Elements(b) => format!("{:.4} elements/s", (*b as f64) / (value * 1e-9)),
+            _ => unreachable!(),
         }
     }
 
@@ -258,6 +259,7 @@ impl ValueFormatter for WgpuTimerFormatter {
         match throughput {
             Throughput::Bytes(_) => "GiB/s",
             Throughput::Elements(_) => "elements/s",
+            _ => unreachable!(),
         }
     }
 
