@@ -29,7 +29,9 @@ impl std::ops::Deref for GPUHandle {
 
 impl GPUHandle {
     fn get_features() -> wgpu::Features {
-        wgpu::Features::default() | wgpu::Features::TIMESTAMP_QUERY
+        wgpu::Features::default()
+            | wgpu::Features::TIMESTAMP_QUERY
+            | wgpu::Features::SUBGROUP_COMPUTE
     }
 
     pub async fn new() -> Result<Self, anyhow::Error> {

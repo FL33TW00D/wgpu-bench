@@ -16,6 +16,10 @@ harness = false
 name = "naive_vectorized_onepass"
 harness = false
 
+[[bench]]
+name = "welford_vectorized"
+harness = false
+
 [dependencies]
 anyhow = "1.0.75"
 bytemuck = "1.14.0"
