@@ -23,6 +23,7 @@ var<uniform> metadata: Meta;
 var<workgroup> mu: f32;
 var<workgroup> sigma: f32;
 var<workgroup> county: f32;
+var<workgroup> subgrp_size: u32;
 
 fn welford_combine(val: f32, mean: f32, m2: f32, count: f32) -> vec3<f32> {
     let new_count = count + 1.0;
@@ -49,7 +50,7 @@ fn welford_warp_reduce(thread_mean: f32, thread_m2: f32, thread_count: f32) -> v
     var mean = thread_mean;
     var m2 = thread_m2;
     var count = thread_count;
-    for (var offset = 16u; offset > 0u; offset /= 2u) {
+    for (var offset = subgrp_size >> 1u; offset > 0u; offset >>= 1u) {
         let b_mean = subgroupShuffleDown(mean, offset);
         let b_m2 = subgroupShuffleDown(m2, offset);
         let b_count = subgroupShuffleDown(count, offset);
@@ -80,7 +81,9 @@ fn main(
         @builtin(workgroup_id) group_id: vec3<u32>,
         @builtin(global_invocation_id) global_id: vec3<u32>,
         @builtin(subgroup_id) subgroup_id: u32,
+        @builtin(subgroup_size) subgroup_size: u32,
 ) {
+    subgrp_size = subgroup_size;
     let a = X[0];
     let b = S[0];
     let c = B[0];
