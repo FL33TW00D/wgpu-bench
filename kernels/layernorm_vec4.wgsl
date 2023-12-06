@@ -81,10 +81,10 @@ fn main(
     let mu = mu(local_id, anchor);
     let sigma = sigma(local_id, anchor, mu);
 
-    let denom = sqrt(sigma + vec4<f32>(metadata.eps));
+    let denom = inverseSqrt(sigma + vec4<f32>(metadata.eps));
 
     for(var i: u32 = local_id.x; i < metadata.ND4; i += BLOCK_SIZE) {
-        let val = (X[anchor + i] - mu) / denom;
+        let val = (X[anchor + i] - mu) * denom;
         Y[anchor + i] = fma(val, S[i], B[i]); 
     }
 }

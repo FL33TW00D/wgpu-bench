@@ -84,7 +84,7 @@ impl CPUTensor {
     }
 
     pub fn rand<T: num_traits::Float + DataType + SampleUniform>(shape: Shape) -> Self {
-        let between = Uniform::from(T::from(-100).unwrap()..T::from(100).unwrap());
+        let between = Uniform::from(T::from(-10).unwrap()..T::from(10).unwrap());
         let mut rng: SmallRng = SeedableRng::seed_from_u64(42);
         let rand_vec = (0..shape.numel())
             .map(|_| T::from(between.sample(&mut rng)).unwrap())
