@@ -24,13 +24,13 @@ var<workgroup> mu: f32;
 var<workgroup> sigma: f32;
 var<workgroup> subgrp_size: u32;
 
-fn welford_combine(val: f32, mean: f32, m2: f32, count: f32) -> vec3<f32> {
+fn welford_vcombine(val: vec4<f32>, mean: vec4<f32>, m2: vec4<f32>, count: vec4<f32>) -> mat3x4<f32> {
     let new_count = count + 1.0;
     let delta1 = val - mean;
     let new_mean = mean + delta1 / new_count;
     let delta2 = val - new_mean;
-    let new_m2 = m2 + delta1 * delta2;
-    return vec3<f32>(new_mean, new_m2, new_count);
+    let new_m2 = m2 + delta1 * delta2; 
+    return mat3x4<f32>(new_mean, new_m2, new_count);
 }
 
 fn block_welford_combine(b_mean: f32, b_m2: f32, b_count: f32, mean: f32, m2: f32, count: f32) -> vec3<f32> {
@@ -84,29 +84,32 @@ fn main(
 ) {
     subgrp_size = subgroup_size;
     let anchor = (group_id.y * metadata.M * metadata.ND4) + group_id.x * metadata.ND4; 
-    var threadVar = 0f;
-    var threadMean = 0f;
-    var threadCount = 0f;
+    var threadMean = vec4<f32>(0.0);
+    var threadVar = vec4<f32>(0.0);
+    var threadCount = vec4<f32>(0.0);
     for (var i = local_id.x; i < metadata.ND4; i+= {{ workgroup_size_x }}u) {
-        let a = welford_combine(X[anchor + i].x, threadMean, threadVar, threadCount);
+        let a = welford_vcombine(X[anchor + i], threadMean, threadVar, threadCount);
         threadMean = a.x;
         threadVar = a.y;
         threadCount = a.z;
-        let b = welford_combine(X[anchor + i].y, threadMean, threadVar, threadCount);
-        threadMean = b.x;
-        threadVar = b.y;
-        threadCount = b.z;
-        let c = welford_combine(X[anchor + i].z, threadMean, threadVar, threadCount);
-        threadMean = c.x;
-        threadVar = c.y;
-        threadCount = c.z;
-        let d = welford_combine(X[anchor + i].w, threadMean, threadVar, threadCount);
-        threadMean = d.x;
-        threadVar = d.y;
-        threadCount = d.z;
     }
+    var finalMean = threadMean.x;
+    var finalVar = threadVar.x;
+    var finalCount = threadCount.x;
+    var returned = block_welford_combine(threadMean.y, threadVar.y, threadCount.y, finalMean, finalVar, finalCount);
+    finalMean = returned.x;
+    finalVar = returned.y;
+    finalCount = returned.z;
+    returned = block_welford_combine(threadMean.z, threadVar.z, threadCount.z, finalMean, finalVar, finalCount);
+    finalMean = returned.x;
+    finalVar = returned.y;
+    finalCount = returned.z;
+    returned = block_welford_combine(threadMean.w, threadVar.w, threadCount.w, finalMean, finalVar, finalCount);
+    finalMean = returned.x;
+    finalVar = returned.y;
+    finalCount = returned.z;
 
-    let reduced = welford_warp_all_reduce(threadMean, threadVar, threadCount);
+    let reduced = welford_warp_all_reduce(finalMean, finalVar, finalCount);
     var mean = reduced.x;
     var m2 = reduced.y;
     var count = reduced.z;

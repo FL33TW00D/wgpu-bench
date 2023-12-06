@@ -88,9 +88,7 @@ impl Kernel for LayerNorm {
                 import torch.nn.functional as F
 
                 (input, scale, bias) = (torch.from_numpy('py_input), torch.from_numpy('py_scale), torch.from_numpy('py_bias))
-                std = torch.std(input, dim=-1, unbiased=False, keepdim=True)
                 mean = torch.mean(input, dim=-1, keepdim=True)
-                print("Std: ", std)
                 print("Mean: ", mean)
                 result = F.layer_norm(input, (input.shape[-1],), weight=scale, bias=bias).numpy()
             };
