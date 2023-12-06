@@ -34,6 +34,7 @@ pub struct LayerNorm {
 
 const PROB_M: usize = 2048;
 const PROB_N: usize = 2048;
+const WARP_SIZE: usize = 32;
 
 impl Kernel for LayerNorm {
     type Metadata = LayerNormMeta;
@@ -47,7 +48,7 @@ impl Kernel for LayerNorm {
         let mut context = tera::Context::new();
         tera.add_raw_template(
             &Self::name(),
-            include_str!("../kernels/layernorm_vec4_welford.wgsl"),
+            include_str!("../kernels/layernorm_scalar_welford.wgsl"),
         )
         .unwrap();
         context.insert_workload(workload);
@@ -65,7 +66,7 @@ impl Kernel for LayerNorm {
     fn workload(tensors: &[CPUTensor]) -> Workload {
         let input = &tensors[0];
         let [_B, M, _N] = input.shape().try_into().unwrap();
-        Workload::new(wgs![128, 1, 1], wgc![M as _, 1, 1])
+        Workload::new(wgs![WARP_SIZE as _, 1, 1], wgc![M as _, 1, 1])
     }
 
     fn metadata(&self, tensors: &[CPUTensor]) -> Self::Metadata {

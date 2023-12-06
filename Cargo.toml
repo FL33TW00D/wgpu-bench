@@ -17,7 +17,7 @@ name = "naive_vectorized_onepass"
 harness = false
 
 [[bench]]
-name = "welford_vectorized"
+name = "welford_scalar"
 harness = false
 
 [dependencies]
