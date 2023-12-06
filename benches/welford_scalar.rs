@@ -32,15 +32,15 @@ pub struct LayerNorm {
     eps: f32,
 }
 
-const PROB_M: usize = 2048;
-const PROB_N: usize = 2048;
+const PROB_M: usize = 1024;
+const PROB_N: usize = 1024;
 const WARP_SIZE: usize = 32;
 
 impl Kernel for LayerNorm {
     type Metadata = LayerNormMeta;
 
     fn name() -> &'static str {
-        "WelfordVectorized"
+        "WelfordScalar"
     }
 
     fn source(workload: &Workload) -> String {
@@ -88,8 +88,7 @@ impl Kernel for LayerNorm {
                 import torch.nn.functional as F
 
                 (input, scale, bias) = (torch.from_numpy('py_input), torch.from_numpy('py_scale), torch.from_numpy('py_bias))
-                //result = F.layer_norm(input, (input.shape[-1],), weight=scale, bias=bias).numpy()
-                result = torch.var(input, dim=-1, keepdim=True).numpy()
+                result = F.layer_norm(input, (input.shape[-1],), weight=scale, bias=bias).numpy()
             };
             CPUTensor::from(result.get_with_gil::<&PyArrayDyn<f32>>(py, "result"))
         });

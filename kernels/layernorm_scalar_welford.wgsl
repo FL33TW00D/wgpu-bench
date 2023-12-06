@@ -22,7 +22,6 @@ var<uniform> metadata: Meta;
 
 var<workgroup> mu: f32;
 var<workgroup> sigma: f32;
-var<workgroup> county: f32;
 var<workgroup> subgrp_size: u32;
 
 fn welford_combine(val: f32, mean: f32, m2: f32, count: f32) -> vec3<f32> {
@@ -84,10 +83,6 @@ fn main(
         @builtin(subgroup_size) subgroup_size: u32,
 ) {
     subgrp_size = subgroup_size;
-    let a = X[0];
-    let b = S[0];
-    let c = B[0];
-    let d = Y[0];
     let anchor = (group_id.y * metadata.M * metadata.N) + group_id.x * metadata.N; 
     var threadVar = 0f;
     var threadMean = 0f;
@@ -105,10 +100,12 @@ fn main(
     var count = reduced.z;
     if (subgroup_id == 0u) {
         mu = mean;
-        sigma = m2 / count;
-        county = count;
+        sigma = inverseSqrt(m2 / count + metadata.eps);
     }
-    Y[anchor] = mu;
-    Y[anchor + 1u] = sigma;
-    Y[anchor + 2u] = county;
+    subgroupBarrier();
+    for (var i = local_id.x; i < metadata.N; i+= {{ workgroup_size_x }}u) {
+        let val = X[anchor + i];
+        let normalized = (val - mu) * sigma;
+        Y[anchor + i] = fma(normalized, S[i], B[i]); 
+    }
 }
