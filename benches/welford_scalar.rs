@@ -88,7 +88,8 @@ impl Kernel for LayerNorm {
                 import torch.nn.functional as F
 
                 (input, scale, bias) = (torch.from_numpy('py_input), torch.from_numpy('py_scale), torch.from_numpy('py_bias))
-                result = F.layer_norm(input, (input.shape[-1],), weight=scale, bias=bias).numpy()
+                //result = F.layer_norm(input, (input.shape[-1],), weight=scale, bias=bias).numpy()
+                result = torch.var(input, dim=-1, keepdim=True).numpy()
             };
             CPUTensor::from(result.get_with_gil::<&PyArrayDyn<f32>>(py, "result"))
         });

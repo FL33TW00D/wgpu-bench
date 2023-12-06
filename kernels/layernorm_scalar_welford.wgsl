@@ -21,10 +21,11 @@ struct Meta {
 var<uniform> metadata: Meta;
 
 var<workgroup> mu: f32;
-var<workgroup> sigma: f32;
+var<workgroup> varr: f32;
+var<workgroup> county: f32;
 
 fn welford_combine(val: f32, mean: f32, m2: f32, count: f32) -> vec3<f32> {
-    let new_count = count + 1.0;
+    let new_count = count + 1u;
     let delta1 = val - mean;
     let new_mean = mean + delta1 / new_count;
     let delta2 = val - new_mean;
@@ -48,11 +49,11 @@ fn welford_warp_reduce(thread_mean: f32, thread_m2: f32, thread_count: f32) -> v
     var mean = thread_mean;
     var m2 = thread_m2;
     var count = thread_count;
-    for (var offset = 16u; offset > 0u; offset >>= 1u) {
+    for (var offset = 16u; offset > 0u; offset /= 2u) {
         let b_mean = subgroupShuffleDown(thread_mean, offset);
         let b_m2 = subgroupShuffleDown(thread_m2, offset);
         let b_count = subgroupShuffleDown(thread_count, offset);
-        let returned = block_welford_combine(b_mean, b_m2, b_count, thread_mean, thread_m2, thread_count);
+        let returned = block_welford_combine(b_mean, b_m2, b_count, mean, m2, count);
         mean = returned.x;
         m2 = returned.y;
         count = returned.z;
@@ -87,20 +88,24 @@ fn main(
     let anchor = (group_id.y * metadata.M * metadata.N) + group_id.x * metadata.N; 
     var threadVar = 0f;
     var threadMean = 0f;
+    var threadCount = 0f;
     for (var i = local_id.x; i < metadata.N; i+= {{ workgroup_size_x }}u) {
         let returned = welford_combine(X[anchor + i], threadMean, threadVar, threadVar);
         threadMean = returned.x;
         threadVar = returned.y;
+        threadCount = returned.z;
     }
 
-    let reduced = welford_warp_all_reduce(threadMean, threadVar, threadVar);
+    let reduced = welford_warp_all_reduce(threadMean, threadVar, threadCount);
     var mean = reduced.x;
     var m2 = reduced.y;
     var count = reduced.z;
     if (subgroup_id == 0u) {
         mu = mean;
-        sigma = sqrt(m2 / count + metadata.eps);
+        varr = m2 / count;
+        county = count;
     }
     Y[anchor] = mu;
-    Y[anchor + 1u] = sigma;
+    Y[anchor + 1u] = varr;
+    Y[anchor + 2u] = county;
 }
