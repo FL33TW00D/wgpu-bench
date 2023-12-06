@@ -94,8 +94,6 @@ impl Kernel for LayerNorm {
         });
         let mut gpu_tensors = dispatch_validate(&TIMER.handle(), self);
         let cpu_result = gpu_tensors.remove(3).into_cpu(&TIMER.handle()).unwrap();
-        println!("GROUND: {}", ground);
-        println!("OURS: {}", cpu_result);
         ground.all_close(&cpu_result, 1e-5, 1e-5).unwrap();
     }
 }
