@@ -2,7 +2,7 @@ use bytemuck::NoUninit;
 use ndarray::Dimension;
 use numpy::ndarray::{ArrayD, ArrayViewD};
 use rand::{
-    distributions::{uniform::SampleUniform},
+    distributions::uniform::SampleUniform,
     prelude::{Distribution, SeedableRng},
     rngs::SmallRng,
 };
@@ -85,7 +85,7 @@ impl CPUTensor {
     }
 
     pub fn rand<T: num_traits::Float + DataType + SampleUniform>(shape: Shape) -> Self {
-        let between = Poisson::new(10.0).unwrap();
+        let between = Poisson::new(5.0).unwrap();
         let mut rng: SmallRng = SeedableRng::seed_from_u64(42);
         let rand_vec = (0..shape.numel())
             .map(|_| T::from(between.sample(&mut rng)).unwrap())

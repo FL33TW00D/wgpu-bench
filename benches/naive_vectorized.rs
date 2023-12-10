@@ -32,8 +32,8 @@ pub struct LayerNorm {
     eps: f32,
 }
 
-const PROB_M: usize = 1024;
-const PROB_N: usize = 1024;
+const PROB_M: usize = 2048;
+const PROB_N: usize = 512;
 
 impl Kernel for LayerNorm {
     type Metadata = LayerNormMeta;
@@ -45,11 +45,8 @@ impl Kernel for LayerNorm {
     fn source(workload: &Workload) -> String {
         let mut tera = tera::Tera::default();
         let mut context = tera::Context::new();
-        tera.add_raw_template(
-            Self::name(),
-            include_str!("../kernels/layernorm_vec4.wgsl"),
-        )
-        .unwrap();
+        tera.add_raw_template(Self::name(), include_str!("../kernels/layernorm_vec4.wgsl"))
+            .unwrap();
         context.insert_workload(workload);
         tera.render(Self::name(), &context).unwrap()
     }
