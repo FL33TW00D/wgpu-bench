@@ -57,6 +57,7 @@ fn sigma(local_id: vec3<u32>, anchor: u32, mu: f32) -> f32 {
         let val = X[anchor + i] - mu;
         threadSum += (val * val);
     }
+    workgroupBarrier();
     smem[local_id.x] = threadSum;
     workgroupBarrier();
     
