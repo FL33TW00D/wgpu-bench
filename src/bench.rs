@@ -35,7 +35,7 @@ pub fn dispatch_validate<K: Kernel>(handle: &GPUHandle, kernel: &K) -> Vec<GPUTe
     let uniform_buffer = kernel.metadata(&tensors).into_buffer(handle);
     let gpu_tensors = tensors
         .into_iter()
-        .map(|t| t.into_gpu(&handle))
+        .map(|t| t.into_gpu(handle))
         .collect::<Vec<_>>();
     let bind_groups = tensors_to_bind_groups(handle, &gpu_tensors, uniform_buffer, &pipeline);
     let mut encoder = handle
@@ -74,7 +74,7 @@ pub fn dispatch(
         for (i, bind_group) in bind_groups.iter().enumerate() {
             cpass.set_bind_group(i as _, bind_group, &[]);
         }
-        cpass.set_pipeline(&pipeline);
+        cpass.set_pipeline(pipeline);
         let (x, y, z) = workload.count().as_tuple();
         cpass.dispatch_workgroups(x, y, z);
     }
@@ -154,7 +154,7 @@ pub fn benchmark<K: Kernel>(
 
     let gpu_tensors = tensors
         .into_iter()
-        .map(|t| t.into_gpu(&handle))
+        .map(|t| t.into_gpu(handle))
         .collect::<Vec<_>>();
     let bind_groups = tensors_to_bind_groups(handle, &gpu_tensors, uniform_buffer, &pipeline);
 
@@ -163,7 +163,7 @@ pub fn benchmark<K: Kernel>(
     group.warm_up_time(Duration::from_secs(2)); //Limit warmup time to avoid MAX_QUERIES limit
     group.bench_function(BenchmarkId::new(K::name(), 0), |b| {
         b.iter(|| {
-            dispatch(handle, &workload, &*bind_groups, &pipeline, timer);
+            dispatch(handle, &workload, &bind_groups, &pipeline, timer);
             timer.increment_query();
         });
     });

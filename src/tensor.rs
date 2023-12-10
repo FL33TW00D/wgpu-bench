@@ -2,7 +2,7 @@ use bytemuck::NoUninit;
 use ndarray::Dimension;
 use numpy::ndarray::{ArrayD, ArrayViewD};
 use rand::{
-    distributions::{uniform::SampleUniform, Uniform},
+    distributions::{uniform::SampleUniform},
     prelude::{Distribution, SeedableRng},
     rngs::SmallRng,
 };

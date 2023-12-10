@@ -53,9 +53,9 @@ impl QueryPair {
     }
 }
 
-impl Into<Range<u32>> for QueryPair {
-    fn into(self) -> Range<u32> {
-        self.start..self.end + 1
+impl From<QueryPair> for Range<u32> {
+    fn from(val: QueryPair) -> Self {
+        val.start..val.end + 1
     }
 }
 
@@ -190,7 +190,7 @@ impl Measurement for &WgpuTimer {
         };
         log::info!("Pass range: {:?}", pass_query);
 
-        self.resolve_pass(&mut encoder, pass_query.clone());
+        self.resolve_pass(&mut encoder, pass_query);
         self.handle().queue().submit(Some(encoder.finish()));
         self.handle.device().poll(wgpu::Maintain::Wait);
 
