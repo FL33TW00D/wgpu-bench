@@ -24,53 +24,44 @@ var<workgroup> mu: f32;
 var<workgroup> sigma: f32;
 var<workgroup> subgrp_size: u32;
 
-fn welford_vcombine(val: vec4<f32>, mean: vec4<f32>, m2: vec4<f32>, count: vec4<f32>) -> mat3x4<f32> {
-    let new_count = count + 1.0;
-    let delta1 = val - mean;
-    let new_mean = mean + delta1 / new_count;
-    let delta2 = val - new_mean;
-    let new_m2 = m2 + delta1 * delta2; 
-    return mat3x4<f32>(new_mean, new_m2, new_count);
+fn welford_vcombine(val: vec4<f32>, mean: ptr<function, vec4<f32>>, m2: ptr<function, vec4<f32>>, count: ptr<function, vec4<f32>>) { 
+    *count += 1.0;
+    let delta1 = val - *mean;
+    *mean += delta1 / *count;
+    let delta2 = val - *mean;
+    *m2 += delta1 * delta2;
 }
 
-fn block_welford_combine(b_mean: f32, b_m2: f32, b_count: f32, mean: f32, m2: f32, count: f32) -> vec3<f32> {
+fn block_welford_combine(b_mean: f32, b_m2: f32, b_count: f32, mean: ptr<function, f32>, m2: ptr<function, f32>, count: ptr<function, f32>) {
     if (b_count == 0.0) {
-        return vec3<f32>(mean, m2, count);
+        return;
     }
-    let new_count = count + b_count; 
+    let new_count = *count + b_count; 
     let nb_over_n = b_count / new_count;
-    let delta = b_mean - mean;
-    let new_mean = mean + delta * nb_over_n;
-    let new_m2 = m2 + b_m2 + delta * delta * count * nb_over_n;
-    return vec3<f32>(new_mean, new_m2, new_count);
+    let delta = b_mean - *mean;
+    *mean += delta * nb_over_n;
+    *m2 += b_m2 + delta * delta * (*count) * nb_over_n;
+    *count = new_count;
 }
 
-fn welford_warp_reduce(thread_mean: f32, thread_m2: f32, thread_count: f32) -> vec3<f32> {
-    var mean = thread_mean;
-    var m2 = thread_m2;
-    var count = thread_count;
+fn welford_warp_reduce(thread_mean: f32, thread_m2: f32, thread_count: f32, mean: ptr<function, f32>, m2: ptr<function, f32>, count: ptr<function, f32>) {
+    *mean = thread_mean;
+    *m2 = thread_m2;
+    *count = thread_count;
     for (var offset = subgrp_size >> 1u; offset > 0u; offset >>= 1u) {
-        let b_mean = subgroupShuffleDown(mean, offset);
-        let b_m2 = subgroupShuffleDown(m2, offset);
-        let b_count = subgroupShuffleDown(count, offset);
-        let returned = block_welford_combine(b_mean, b_m2, b_count, mean, m2, count);
-        mean = returned.x;
-        m2 = returned.y;
-        count = returned.z;
+        let b_mean = subgroupShuffleDown(*mean, offset);
+        let b_m2 = subgroupShuffleDown(*m2, offset);
+        let b_count = subgroupShuffleDown(*count, offset);
+        block_welford_combine(b_mean, b_m2, b_count, mean, m2, count);
     }
-    return vec3<f32>(mean, m2, count);
 }
 
-fn welford_warp_all_reduce(thread_mean: f32, thread_m2: f32, thread_count: f32) -> vec3<f32> {
-    let reduced = welford_warp_reduce(thread_mean, thread_m2, thread_count);
-    var mean = reduced.x;
-    var m2 = reduced.y;
-    var count = reduced.z;
+fn welford_warp_all_reduce(thread_mean: f32, thread_m2: f32, thread_count: f32, mean: ptr<function, f32>, m2: ptr<function, f32>, count: ptr<function, f32>) {
+    welford_warp_reduce(thread_mean, thread_m2, thread_count, mean, m2, count);
 
-    mean = subgroupBroadcast(mean, 0u);
-    m2 = subgroupBroadcast(m2, 0u);
-    count = subgroupBroadcast(count, 0u);
-    return vec3<f32>(mean, m2, count);
+    *mean = subgroupBroadcast(*mean, 0u);
+    *m2 = subgroupBroadcast(*m2, 0u);
+    *count = subgroupBroadcast(*count, 0u);
 }
 
 
@@ -85,34 +76,23 @@ fn main(
     subgrp_size = subgroup_size;
     let anchor = (group_id.y * metadata.M * metadata.ND4) + group_id.x * metadata.ND4; 
     var threadMean = vec4<f32>(0.0);
-    var threadVar = vec4<f32>(0.0);
+    var threadM2 = vec4<f32>(0.0);
     var threadCount = vec4<f32>(0.0);
     for (var i = local_id.x; i < metadata.ND4; i+= {{ workgroup_size_x }}u) {
-        let a = welford_vcombine(X[anchor + i], threadMean, threadVar, threadCount);
-        threadMean = a.x;
-        threadVar = a.y;
-        threadCount = a.z;
+        welford_vcombine(X[anchor + i], &threadMean, &threadM2, &threadCount);
     }
     var finalMean = threadMean.x;
-    var finalVar = threadVar.x;
+    var finalM2 = threadM2.x;
     var finalCount = threadCount.x;
-    var returned = block_welford_combine(threadMean.y, threadVar.y, threadCount.y, finalMean, finalVar, finalCount);
-    finalMean = returned.x;
-    finalVar = returned.y;
-    finalCount = returned.z;
-    returned = block_welford_combine(threadMean.z, threadVar.z, threadCount.z, finalMean, finalVar, finalCount);
-    finalMean = returned.x;
-    finalVar = returned.y;
-    finalCount = returned.z;
-    returned = block_welford_combine(threadMean.w, threadVar.w, threadCount.w, finalMean, finalVar, finalCount);
-    finalMean = returned.x;
-    finalVar = returned.y;
-    finalCount = returned.z;
+    block_welford_combine(threadMean.y, threadM2.y, threadCount.y, &finalMean, &finalM2, &finalCount);
+    block_welford_combine(threadMean.z, threadM2.z, threadCount.z, &finalMean, &finalM2, &finalCount);
+    block_welford_combine(threadMean.w, threadM2.w, threadCount.w, &finalMean, &finalM2, &finalCount);
 
-    let reduced = welford_warp_all_reduce(finalMean, finalVar, finalCount);
-    var mean = reduced.x;
-    var m2 = reduced.y;
-    var count = reduced.z;
+    var mean = 0f;
+    var m2 = 0f;
+    var count = 0f;
+    welford_warp_all_reduce(finalMean, finalM2, finalCount, &mean, &m2, &count); 
+
     if (subgroup_id == 0u) {
         mu = mean;
         sigma = inverseSqrt(m2 / count + metadata.eps);
