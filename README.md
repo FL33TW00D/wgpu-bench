@@ -31,7 +31,8 @@ thrpt:  [33.3415 GiB/s 34.2849 GiB/s 35.1118 GiB/s]
 
 ## TODO
 
-- [ ] Add throughput measurements
+- [x] Add throughput measurements
+- [ ] Encode more commands into a single command buffer (https://github.com/philipturner/metal-flash-attention/issues/12#issuecomment-1850300198)
 - [ ] Benchmark comparisons? Shared code between similar kernels?
 - [ ] Simplify Kernel trait
 - [ ] Cleaning & Polishing 🧽
