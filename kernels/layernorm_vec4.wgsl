@@ -55,9 +55,8 @@ fn sigma(local_id: vec3<u32>, anchor: u32, mu: f32) -> f32 {
     //Compute σ
     for (var i: u32 = local_id.x; i < metadata.ND4; i += BLOCK_SIZE) {
         let val = X[anchor + i] - mu;
-        threadSum += (val * val);
+        threadSum = fma(val, val, threadSum);
     }
-    workgroupBarrier();
     smem[local_id.x] = threadSum;
     workgroupBarrier();
     

@@ -7,26 +7,33 @@ Check out `/benches` for an example, simply implement the Kernel trait and boom!
 Provide a Python snippet to ensure that your kernel is correct!
 
 ## Optimizing a LayerNorm Kernel
+
+Reproduce:
 ```bash
-Naive Onepass
-time:   [208725.4932 ns 209048.9067 ns 209391.8682 ns]
-thrpt:  [18.6552 GiB/s 18.6858 GiB/s 18.7148 GiB/s]
+cat Cargo.toml
+cargo bench --bench <bench_name>
+``` 
+Results on M3 Max 14 core:
+```bash
+Naive Onepass (precision FAIL)
+time:   [88680.6021 ns 92554.9586 ns 95756.6363 ns]
+thrpt:  [40.7935 GiB/s 42.2047 GiB/s 44.0485 GiB/s]
 
 Naive
-time:   [161370.7035 ns 166101.8417 ns 172456.2275 ns]
-thrpt:  [22.6507 GiB/s 23.5172 GiB/s 24.2067 GiB/s]
+time:   [115698.3828 ns 116433.8667 ns 117343.1857 ns]
+thrpt:  [33.2891 GiB/s 33.5491 GiB/s 33.7624 GiB/s]
 
 Naive Vectorized
-time:   [150533.2318 ns 151013.9824 ns 151519.9951 ns]
-thrpt:  [25.7804 GiB/s 25.8668 GiB/s 25.9494 GiB/s]
+time:   [113990.1512 ns 114341.8859 ns 114775.5896 ns]
+thrpt:  [34.0338 GiB/s 34.1629 GiB/s 34.2683 GiB/s]
 
 Welford Scalar
-time:   [129993.7867 ns 133295.9256 ns 137187.9144 ns]
-thrpt:  [28.4737 GiB/s 29.3051 GiB/s 30.0495 GiB/s]
+time:   [74209.2818 ns 74668.5137 ns 75306.7653 ns]
+thrpt:  [51.8712 GiB/s 52.3146 GiB/s 52.6383 GiB/s]
 
 Welford Vectorized
-time:   [111251.7095 ns 113935.1043 ns 117158.9148 ns]
-thrpt:  [33.3415 GiB/s 34.2849 GiB/s 35.1118 GiB/s]
+time:   [48744.7028 ns 48831.9797 ns 48933.0603 ns]
+thrpt:  [79.8284 GiB/s 79.9937 GiB/s 80.1369 GiB/s]
 ```
 
 ## TODO
