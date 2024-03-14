@@ -98,7 +98,7 @@ impl Kernel for LayerNorm {
     }
 }
 
-pub fn benchmark(c: &mut Criterion<&WgpuTimer>) {
+fn benchmark(c: &mut Criterion<&WgpuTimer>) {
     wgpu_bencher::benchmark(
         c,
         &TIMER,

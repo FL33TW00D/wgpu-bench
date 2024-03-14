@@ -16,7 +16,9 @@ impl KernelContextExt for tera::Context {
     }
 }
 
-// Implemented by all kernels that want to be benchmarked
+/// # Kernel
+///
+/// The core trait. Implement this trait for all kernels you want to benchmark.
 pub trait Kernel: std::fmt::Debug {
     type Metadata: OpMetadata;
     fn name() -> &'static str;
@@ -38,20 +40,7 @@ pub fn dispatch_validate<K: Kernel>(handle: &GPUHandle, kernel: &K) -> Vec<GPUTe
         .map(|t| t.into_gpu(handle))
         .collect::<Vec<_>>();
     let bind_groups = tensors_to_bind_groups(handle, &gpu_tensors, uniform_buffer, &pipeline);
-    let mut encoder = handle
-        .device()
-        .create_command_encoder(&wgpu::CommandEncoderDescriptor { label: None });
-    {
-        let mut cpass = encoder.begin_compute_pass(&wgpu::ComputePassDescriptor::default());
-        for (i, bind_group) in bind_groups.iter().enumerate() {
-            cpass.set_bind_group(i as _, bind_group, &[]);
-        }
-        cpass.set_pipeline(&pipeline);
-        let (x, y, z) = workload.count().as_tuple();
-        cpass.dispatch_workgroups(x, y, z);
-    }
-    handle.queue().submit(Some(encoder.finish()));
-    handle.device().poll(wgpu::Maintain::Wait);
+    dispatch(handle, &workload, &bind_groups, &pipeline, None);
     gpu_tensors
 }
 
@@ -61,7 +50,7 @@ pub fn dispatch(
     workload: &Workload,
     bind_groups: &[wgpu::BindGroup],
     pipeline: &wgpu::ComputePipeline,
-    timer: &WgpuTimer,
+    timestamp_writes: Option<wgpu::ComputePassTimestampWrites>,
 ) {
     let mut encoder = handle
         .device()
@@ -69,7 +58,7 @@ pub fn dispatch(
     {
         let mut cpass = encoder.begin_compute_pass(&wgpu::ComputePassDescriptor {
             label: None,
-            timestamp_writes: Some(timer.timestamp_writes()),
+            timestamp_writes,
         });
         for (i, bind_group) in bind_groups.iter().enumerate() {
             cpass.set_bind_group(i as _, bind_group, &[]);
@@ -163,7 +152,8 @@ pub fn benchmark<K: Kernel>(
     group.warm_up_time(Duration::from_secs(2)); //Limit warmup time to avoid MAX_QUERIES limit
     group.bench_function(BenchmarkId::new(K::name(), 0), |b| {
         b.iter(|| {
-            dispatch(handle, &workload, &bind_groups, &pipeline, timer);
+            let tsw = timer.timestamp_writes();
+            dispatch(handle, &workload, &bind_groups, &pipeline, Some(tsw));
             timer.increment_query();
         });
     });
