@@ -6,26 +6,32 @@ edition = "2021"
 # See more keys and their definitions at https://doc.rust-lang.org/cargo/reference/manifest.html
 [[bench]]
 name = "naive"
+path = "benches/layernorm/naive.rs"
 harness = false
 
 [[bench]]
 name = "naive_vectorized"
+path = "benches/layernorm/naive_vectorized.rs"
 harness = false
 
 [[bench]]
 name = "naive_onepass"
+path = "benches/layernorm/naive_onepass.rs"
 harness = false
 
 [[bench]]
 name = "naive_vectorized_onepass"
+path = "benches/layernorm/naive_vectorized_onepass.rs"
 harness = false
 
 [[bench]]
 name = "welford_scalar"
+path = "benches/layernorm/welford_scalar.rs"
 harness = false
 
 [[bench]]
 name = "welford_vectorized"
+path = "benches/layernorm/welford_vectorized.rs"
 harness = false
 
 [dependencies]

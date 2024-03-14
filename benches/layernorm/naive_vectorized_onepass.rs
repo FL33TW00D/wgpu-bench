@@ -39,14 +39,17 @@ impl Kernel for LayerNorm {
     type Metadata = LayerNormMeta;
 
     fn name() -> &'static str {
-        "LayerNormVectorized"
+        "LayerNormVectorizedOnePass"
     }
 
     fn source(workload: &Workload) -> String {
         let mut tera = tera::Tera::default();
         let mut context = tera::Context::new();
-        tera.add_raw_template(Self::name(), include_str!("../kernels/layernorm_vec4.wgsl"))
-            .unwrap();
+        tera.add_raw_template(
+            Self::name(),
+            include_str!("../../kernels/layernorm_vec4_onepass.wgsl"),
+        )
+        .unwrap();
         context.insert_workload(workload);
         tera.render(Self::name(), &context).unwrap()
     }

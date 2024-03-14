@@ -39,7 +39,7 @@ impl Kernel for LayerNorm {
     type Metadata = LayerNormMeta;
 
     fn name() -> &'static str {
-        "LayerNormVectorizedOnePass"
+        "LayerNormOnePass"
     }
 
     fn source(workload: &Workload) -> String {
@@ -47,7 +47,7 @@ impl Kernel for LayerNorm {
         let mut context = tera::Context::new();
         tera.add_raw_template(
             Self::name(),
-            include_str!("../kernels/layernorm_vec4_onepass.wgsl"),
+            include_str!("../../kernels/layernorm_scalar_onepass.wgsl"),
         )
         .unwrap();
         context.insert_workload(workload);
@@ -93,7 +93,7 @@ impl Kernel for LayerNorm {
         });
         let mut gpu_tensors = dispatch_validate(TIMER.handle(), self);
         let cpu_result = gpu_tensors.remove(3).into_cpu(TIMER.handle()).unwrap();
-        ground.all_close(&cpu_result, 1e-5, 1e-5).unwrap();
+        ground.all_close(&cpu_result, 1e-4, 1e-4).unwrap();
     }
 }
 

@@ -240,7 +240,7 @@ impl ValueFormatter for WgpuTimerFormatter {
                 "{:.4} GiB/s",
                 (*b as f64) / (1024.0 * 1024.0 * 1024.0) / (value * 1e-9)
             ),
-            Throughput::Elements(b) => format!("{:.4} elements/s", (*b as f64) / (value * 1e-9)),
+            Throughput::Elements(e) => format!("{:.4} GFLOP/s", (*e as f64) / (value * 1e-9)),
             _ => unreachable!(),
         }
     }

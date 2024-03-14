@@ -48,7 +48,7 @@ impl Kernel for LayerNorm {
         let mut context = tera::Context::new();
         tera.add_raw_template(
             Self::name(),
-            include_str!("../kernels/layernorm_vec4_welford.wgsl"),
+            include_str!("../../kernels/layernorm_vec4_welford.wgsl"),
         )
         .unwrap();
         context.insert_workload(workload);
