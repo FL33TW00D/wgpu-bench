@@ -1,4 +1,4 @@
-use std::{borrow::Cow, time::Duration};
+use std::borrow::Cow;
 
 use criterion::{BenchmarkId, Criterion, Throughput};
 
@@ -65,7 +65,9 @@ pub fn dispatch(
         }
         cpass.set_pipeline(pipeline);
         let (x, y, z) = workload.count().as_tuple();
-        cpass.dispatch_workgroups(x, y, z);
+        for _ in 0..WgpuTimer::COMPUTE_PER_QUERY {
+            cpass.dispatch_workgroups(x, y, z);
+        }
     }
     handle.queue().submit(Some(encoder.finish()));
     handle.device().poll(wgpu::Maintain::Wait);
@@ -149,7 +151,7 @@ pub fn benchmark<K: Kernel>(
 
     let mut group = c.benchmark_group("wgpu kernel");
     group.throughput(Throughput::Bytes(bytes_per_iter as u64));
-    group.warm_up_time(Duration::from_secs(2)); //Limit warmup time to avoid MAX_QUERIES limit
+    //group.warm_up_time(Duration::from_secs(2)); //Limit warmup time to avoid MAX_QUERIES limit
     group.bench_function(BenchmarkId::new(K::name(), 0), |b| {
         b.iter(|| {
             let tsw = timer.timestamp_writes();

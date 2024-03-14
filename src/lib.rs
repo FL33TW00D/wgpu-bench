@@ -72,6 +72,8 @@ unsafe impl Send for WgpuTimer {}
 unsafe impl Sync for WgpuTimer {}
 
 impl WgpuTimer {
+    pub const COMPUTE_PER_QUERY: u64 = 100;
+
     pub fn new(handle: GPUHandle) -> Self {
         let query_set = handle.device().create_query_set(&wgpu::QuerySetDescriptor {
             count: MAX_QUERIES,
@@ -155,15 +157,6 @@ impl WgpuTimer {
     }
 }
 
-/// Criterion + wgpu
-/// To avoid recording overhead, we use `wgpu::ComputePassTimestampWrites`, which
-/// records the execution of the compute pass only.
-///
-/// Each benchmark iteration is a single compute pass.
-/// To get the total execution time of the benchmark run, we sum the elapsed time
-/// for each compute pass.
-///
-/// This approach is not perfect and seems quite noisy.
 impl Measurement for &WgpuTimer {
     type Intermediate = u32; // Index of the start query
 
@@ -185,8 +178,7 @@ impl Measurement for &WgpuTimer {
         //Large window, eg 0..512
         let pass_query = QueryPair {
             start: start_index,
-            end: self.current_query().end - 2, //we have to decrement here because we increment at
-                                               //the end of each iter
+            end: self.current_query().end - 2, //decrement here to counteract last iter
         };
         log::info!("Pass range: {:?}", pass_query);
 
@@ -207,7 +199,7 @@ impl Measurement for &WgpuTimer {
         log::info!("Timestamps: {:?}", timestamps);
         self.destination_buffer.unmap();
         self.current_query.set(QueryPair::first());
-        self.hardware_elapsed(&timestamps)
+        self.hardware_elapsed(&timestamps) / WgpuTimer::COMPUTE_PER_QUERY
     }
 
     fn add(&self, v1: &Self::Value, v2: &Self::Value) -> Self::Value {
