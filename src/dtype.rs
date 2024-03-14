@@ -46,7 +46,6 @@ impl DType {
             DType::F32 => std::mem::size_of::<f32>(),
             DType::I32 => std::mem::size_of::<i32>(),
             DType::U32 => std::mem::size_of::<u32>(),
-            _ => unimplemented!(),
         }
     }
 }
@@ -57,7 +56,6 @@ impl std::fmt::Display for DType {
             DType::F32 => write!(f, "f32"),
             DType::I32 => write!(f, "i32"),
             DType::U32 => write!(f, "u32"),
-            _ => unimplemented!(),
         }
     }
 }
