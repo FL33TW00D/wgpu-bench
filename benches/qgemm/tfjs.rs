@@ -8,7 +8,7 @@ use smallvec::smallvec;
 use criterion::{criterion_group, criterion_main, Criterion, Throughput};
 use wgpu_bencher::{
     dispatch_validate, shape, wgc, wgs, CPUTensor, GPUHandle, KernelBench, KernelContextExt,
-    OpMetadata, WgpuTimer, Workload,
+    OpMetadata, Quantization, Quantizer, WgpuTimer, Workload,
 };
 
 lazy_static::lazy_static! {
@@ -78,9 +78,11 @@ impl KernelBench for QGEMMBenchmark {
     fn tensors(&self) -> Vec<CPUTensor> {
         let (B, M, N, K) = (self.B, self.M, self.N, self.K);
         let a = CPUTensor::randn::<f32>(shape![B, M, K]);
-        let b = CPUTensor::randn::<f32>(shape![B, K, N]);
+        let b_unquant = CPUTensor::randn::<f32>(shape![B, K, N]);
+        let quantizer = Quantizer::new(Quantization::SInt8);
+        let quantized_b = quantizer.quantize(b_unquant.clone());
         let output = CPUTensor::zeros::<f32>(shape![B, M, N]);
-        vec![a, b, output]
+        vec![a, b_unquant, quantized_b, output]
     }
 
     fn workload(&self, _: &[CPUTensor]) -> Workload {
@@ -106,9 +108,9 @@ impl KernelBench for QGEMMBenchmark {
     }
 
     fn validate(&self, tensors: &[CPUTensor]) {
-        let (a, b) = (&tensors[0], &tensors[1]);
+        let (a, b_unquant) = (&tensors[0], &tensors[1]);
         let ground = Python::with_gil(|py| {
-            let (py_a, py_b) = (a.to_py::<f32>(&py), b.to_py::<f32>(&py));
+            let (py_a, py_b) = (a.to_py::<f32>(&py), b_unquant.to_py::<f32>(&py));
             let result: Context = python! {
                 import torch
                 (a, b) = (torch.from_numpy('py_a), torch.from_numpy('py_b))
@@ -117,10 +119,10 @@ impl KernelBench for QGEMMBenchmark {
             CPUTensor::from(result.get_with_gil::<&PyArrayDyn<f32>>(py, "result"))
         });
         let mut gpu_tensors = dispatch_validate(TIMER.handle(), self);
-        let cpu_result = gpu_tensors.remove(2).into_cpu(TIMER.handle()).unwrap();
+        let cpu_result = gpu_tensors.remove(3).into_cpu(TIMER.handle()).unwrap();
         println!("GROUND: {}", ground);
         println!("OURS: {}", cpu_result);
-        ground.all_close(&cpu_result, 1e-5, 1e-5).unwrap();
+        ground.all_close(&cpu_result, 1e-2, 1e-2).unwrap();
     }
 }
 

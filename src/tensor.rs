@@ -5,7 +5,7 @@ use rand::{distributions::uniform::SampleUniform, prelude::SeedableRng, rngs::Sm
 use rand_distr::{Distribution, Poisson};
 
 use numpy::PyArrayDyn;
-use wgpu::BufferUsages;
+use wgpu::{BindGroupEntry, BindingResource, BufferUsages};
 
 use crate::storage::{CPUStorage, GPUStorage};
 use crate::DType;
@@ -251,6 +251,33 @@ impl<T: DataType> From<ArrayD<T>> for CPUTensor {
 pub type GPUTensor = Tensor<GPUStorage>;
 
 impl GPUTensor {
+    /// # Bindings
+    ///
+    /// Only applicable to GPU tensors.
+    /// Generates the bind group entries required to bind the tensor to a kernel.
+    /// Quantized tensors may use multiple bind groups.
+    /// Unquantized tensors should only use a single bind group.
+    pub(crate) fn bindings(&self) -> Vec<BindGroupEntry> {
+        let buf = self.storage().inner();
+        let numel = self.shape().numel();
+        let segments = self.dt().segments(numel, buf.size() as usize);
+        segments
+            .iter()
+            .enumerate()
+            .fold(vec![], |mut entries, (idx, segment)| {
+                let (offset, size) = (segment.offset, segment.size);
+                entries.push(BindGroupEntry {
+                    binding: idx as u32,
+                    resource: BindingResource::Buffer(wgpu::BufferBinding {
+                        buffer: buf,
+                        offset,
+                        size,
+                    }),
+                });
+                entries
+            })
+    }
+
     fn read_to_host<A: NoUninit>(shape: Shape, dt: DType, bytes: &[A]) -> CPUTensor {
         match dt {
             DType::F32 => CPUTensor::from_slice::<f32>(bytemuck::cast_slice(bytes), shape),

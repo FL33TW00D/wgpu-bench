@@ -99,19 +99,10 @@ pub fn tensors_to_bind_groups(
     uniform_buffer: GPUBuffer,
     pipeline: &wgpu::ComputePipeline,
 ) -> Vec<wgpu::BindGroup> {
-    let buffers = tensors
-        .iter()
-        .map(|t| t.storage().inner())
-        .collect::<Vec<_>>();
-
-    let bind_group_entries = buffers
-        .iter()
-        .enumerate()
-        .map(|(i, buffer)| wgpu::BindGroupEntry {
-            binding: (i % 4) as u32,
-            resource: buffer.as_entire_binding(),
-        })
-        .collect::<Vec<_>>();
+    let mut bind_group_entries = vec![];
+    for tensor in tensors {
+        bind_group_entries.append(&mut tensor.bindings());
+    }
 
     let mut standard_bind_groups = bind_group_entries
         .chunks(4)
