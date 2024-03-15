@@ -20,7 +20,12 @@ fn getA(d0 : i32, d1 : i32, d2 : i32) -> vec4<f32> {
 }
    
 fn getB(d0 : i32, d1 : i32, d2 : i32) -> vec4<f32> {
-    return unpack4x8snorm(B[getIndexFromCoords3D(vec3<i32>(d0,d1,d2), vec3<i32>({{ bShape.0 }}, {{ bShape.1 }} , {{ bShape.2 }})) / 4]);
+    return unpack4x8snorm(B[getIndexFromCoords3D(vec3<i32>(d0,d1,d2), metadata.bShape) / 4]);
+}
+
+fn getAbsMax(d0 : i32, d1 : i32, d2 : i32) -> f32 {
+    let abs_index = getIndexFromCoords3D(vec3<i32>(d0,d1,d2), metadata.bShape) / 16;
+    return absmax[abs_index]; 
 }
    
 {% if A_FIT %}
@@ -130,7 +135,8 @@ fn main(@builtin(local_invocation_id) localId : vec3<u32>,
         for (var innerRow = 0; innerRow < {{ ROW_PER_THREAD }}; innerRow++) {
             let inputRow = tileRowB + innerRow;
             let inputCol = tileCol;
-            mm_Bsub[inputRow][inputCol] = mm_readB(batchB, kStart + inputRow, globalCol);
+            let absmax = getAbsMax(batchB, kStart + inputRow, globalCol);
+            mm_Bsub[inputRow][inputCol] = mm_readB(batchB, kStart + inputRow, globalCol) * absmax;
         }
         kStart = kStart + {{ TILE_DIM }};
         workgroupBarrier();
@@ -157,3 +163,4 @@ fn main(@builtin(local_invocation_id) localId : vec3<u32>,
         mm_write(batch, globalRow + {{ innerRow }}, globalCol, acc[{{ innerRow }}]);
     {% endfor %}
   }
+}
