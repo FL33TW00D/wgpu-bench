@@ -7,8 +7,8 @@ use smallvec::smallvec;
 
 use criterion::{criterion_group, criterion_main, Criterion};
 use wgpu_bencher::{
-    dispatch_validate, shape, wgc, wgs, CPUTensor, GPUHandle, Kernel, KernelContextExt, OpMetadata,
-    WgpuTimer, Workload,
+    dispatch_validate, shape, wgc, wgs, CPUTensor, GPUHandle, KernelBench, KernelContextExt,
+    OpMetadata, WgpuTimer, Workload,
 };
 
 lazy_static::lazy_static! {
@@ -35,7 +35,7 @@ pub struct LayerNorm {
 const PROB_M: usize = 2048;
 const PROB_N: usize = 512;
 
-impl Kernel for LayerNorm {
+impl KernelBench for LayerNorm {
     type Metadata = LayerNormMeta;
 
     fn name() -> &'static str {

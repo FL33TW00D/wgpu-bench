@@ -3,7 +3,7 @@ fn getIndexFromCoords3D(coords : vec3<i32>, shape : vec3<i32>) -> i32 {
 }
 
 fn getOutputIndexFromCoords(coords : vec3<i32>) -> i32 {
-  return dot(coords, vec3<i32>({{ outShapeStrides[0] }}, {{ outShapeStrides[1] }}, 1));
+  return dot(coords, metadata.outShapeStrides);
 }
         
 fn setOutputAtIndex(flatIndex : i32, value : vec4<f32>) {
@@ -16,11 +16,11 @@ fn setOutputAtCoords(d0 : i32, d1 : i32, d2 : i32, value : vec4<f32>) {
 }
 
 fn getA(d0 : i32, d1 : i32, d2 : i32) -> vec4<f32> {
-    return vec4<f32>(A[getIndexFromCoords3D(vec3<i32>(d0,d1,d2), vec3<i32>({{ aShape.0 }}, {{ aShape.1 }} , {{ aShape.2 }})) / 4]);
+    return vec4<f32>(A[getIndexFromCoords3D(vec3<i32>(d0,d1,d2), metadata.aShape) / 4]);
 }
    
 fn getB(d0 : i32, d1 : i32, d2 : i32) -> vec4<f32> {
-    return vec4<f32>(B[getIndexFromCoords3D(vec3<i32>(d0,d1,d2), vec3<i32>({{ bShape.0 }}, {{ bShape.1 }} , {{ bShape.2 }})) / 4]);
+    return vec4<f32>(B[getIndexFromCoords3D(vec3<i32>(d0,d1,d2), metadata.bShape) / 4]);
 }
    
 fn mm_readA(batch: i32, row: i32, col: i32) -> vec4<f32> {
@@ -58,7 +58,6 @@ struct Meta {
     outShapeStrides: vec3<i32>,
 }
 
-
 @group(1) @binding(0)
 var<uniform> metadata: Meta;
 
@@ -76,8 +75,8 @@ fn main(@builtin(local_invocation_id) localId : vec3<u32>,
     let globalRow = i32(globalId.y) * {{ ROW_PER_THREAD }};
     let globalCol = i32(globalId.x) * 4;
     let batch = i32(globalId.z);
-    let batchA = batch % {{ aShape[0] }}; 
-    let batchB = batch % {{ bShape[0] }};
+    let batchA = batch % metadata.aShape.x; 
+    let batchB = batch % metadata.bShape.x;
 
     let numTiles = ({{ dimInner }} - 1) / {{ TILE_DIM }} + 1;
     var kStart = 0;

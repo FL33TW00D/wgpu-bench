@@ -34,6 +34,11 @@ name = "welford_vectorized"
 path = "benches/layernorm/welford_vectorized.rs"
 harness = false
 
+[[bench]]
+name = "tfjs"
+path = "benches/sgemm/tfjs.rs"
+harness = false
+
 [dependencies]
 anyhow = "1.0.75"
 bytemuck = "1.14.0"
@@ -46,13 +51,13 @@ criterion = "0.5.1"
 wgpu = { git="https://github.com/FL33TW00D/wgpu", branch="master", features=["expose-ids"]}
 pollster = "0.3.0"
 lazy_static = "1.4.0"
-encase = "0.6.1"
+encase = { version = "0.6.1", features=["glam"] }
 derive-new = "0.6.0"
 tera = "1.19.1"
-
 inline-python = { version = "0.12.0"}
 numpy = { version = "0.19.0"}
 pyo3 = { version = "0.19.1"}
 npyz = "0.8.1"
 ndarray = "0.15.6"
 rand_distr = "0.4.3"
+glam = "0.25.0"

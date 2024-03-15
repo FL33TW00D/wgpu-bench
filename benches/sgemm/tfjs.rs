@@ -18,54 +18,49 @@ lazy_static::lazy_static! {
 }
 
 #[derive(ShaderType, derive_new::new, Debug)]
-pub struct LayerNormMeta {
-    M: u32,
-    N: u32,
-    ND4: u32,
-    eps: f32,
+pub struct MatmulMeta {
+    aShape: glam::UVec3,
+    bShape: glam::UVec3,
+    outShape: glam::UVec3,
 }
 
 impl OpMetadata for LayerNormMeta {}
 
 #[derive(derive_new::new, Debug)]
-pub struct LayerNorm {
-    eps: f32,
+pub struct MatmulBenchmark {
+    M: usize,
+    N: usize,
+    K: usize,
 }
 
-const PROB_M: usize = 2048;
-const PROB_N: usize = 512;
-
-impl KernelBench for LayerNorm {
+impl KernelBench for MatmulBenchmark {
     type Metadata = LayerNormMeta;
 
     fn name() -> &'static str {
-        "LayerNormVectorized"
+        "LayerNorm"
     }
 
     fn source(workload: &Workload) -> String {
         let mut tera = tera::Tera::default();
         let mut context = tera::Context::new();
-        tera.add_raw_template(
-            Self::name(),
-            include_str!("../../kernels/layernorm/naive_vec4.wgsl"),
-        )
-        .unwrap();
+        tera.add_raw_template(Self::name(), include_str!("../../kernels/sgemm/tfjs.wgsl"))
+            .unwrap();
         context.insert_workload(workload);
         tera.render(Self::name(), &context).unwrap()
     }
 
-    fn tensors() -> Vec<CPUTensor> {
-        let input = CPUTensor::rand::<f32>(shape![1, PROB_M, PROB_N]);
-        let scale = CPUTensor::rand::<f32>(shape![PROB_N]);
-        let bias = CPUTensor::rand::<f32>(shape![PROB_N]);
-        let output = CPUTensor::zeros::<f32>(shape![1, PROB_M, PROB_N]);
-        vec![input, scale, bias, output]
+    fn tensors(&self) -> Vec<CPUTensor> {
+        let (M, N, K) = (self.M, self.N, self.K);
+        let a = CPUTensor::rand::<f32>(shape![M, K]);
+        let b = CPUTensor::rand::<f32>(shape![K, N]);
+        let output = CPUTensor::zeros::<f32>(shape![M, N]);
+        vec![a, b, output]
     }
 
     fn workload(tensors: &[CPUTensor]) -> Workload {
         let input = &tensors[0];
         let [_B, M, _N] = input.shape().try_into().unwrap();
-        Workload::new(wgs![128, 1, 1], wgc![M as _, 1, 1])
+        Workload::new(wgs![8, 8, 1], wgc![M as _, 1, 1])
     }
 
     fn metadata(&self, tensors: &[CPUTensor]) -> Self::Metadata {

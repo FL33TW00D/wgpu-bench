@@ -16,21 +16,18 @@ impl KernelContextExt for tera::Context {
     }
 }
 
-/// # Kernel
-///
-/// The core trait. Implement this trait for all kernels you want to benchmark.
-pub trait Kernel: std::fmt::Debug {
+pub trait KernelBench: std::fmt::Debug {
     type Metadata: OpMetadata;
     fn name() -> &'static str;
     fn source(workload: &Workload) -> String;
-    fn tensors() -> Vec<CPUTensor>;
+    fn tensors(&self) -> Vec<CPUTensor>;
     fn workload(tensors: &[CPUTensor]) -> Workload;
     fn metadata(&self, tensors: &[CPUTensor]) -> Self::Metadata;
     fn validate(&self, tensors: &[CPUTensor]);
 }
 
-pub fn dispatch_validate<K: Kernel>(handle: &GPUHandle, kernel: &K) -> Vec<GPUTensor> {
-    let tensors = K::tensors();
+pub fn dispatch_validate<K: KernelBench>(handle: &GPUHandle, kernel: &K) -> Vec<GPUTensor> {
+    let tensors = kernel.tensors();
     let workload = K::workload(&tensors);
     let source = K::source(&workload);
     let pipeline = source_to_pipeline(handle, &source);
@@ -129,14 +126,14 @@ pub fn tensors_to_bind_groups(
         .collect::<Vec<_>>()
 }
 
-pub fn benchmark<K: Kernel>(
+pub fn benchmark<K: KernelBench>(
     c: &mut Criterion<&WgpuTimer>,
     timer: &WgpuTimer,
     kernel: K,
     bytes_per_iter: usize,
 ) {
     let handle = timer.handle();
-    let tensors = K::tensors();
+    let tensors = kernel.tensors();
     kernel.validate(&tensors);
     let workload = K::workload(&tensors);
     let source = K::source(&workload);
