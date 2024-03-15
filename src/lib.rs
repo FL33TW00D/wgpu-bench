@@ -1,8 +1,10 @@
+#![feature(int_roundings)]
 mod bench;
 mod data;
 mod dtype;
 mod handle;
 mod metadata;
+mod quant;
 mod shape;
 mod storage;
 mod tensor;
@@ -15,6 +17,7 @@ pub use data::*;
 pub use dtype::*;
 pub use handle::*;
 pub use metadata::*;
+pub use quant::*;
 pub use shape::*;
 pub use storage::*;
 pub use tensor::*;
