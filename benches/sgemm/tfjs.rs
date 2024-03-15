@@ -5,7 +5,7 @@ use numpy::PyArrayDyn;
 use pyo3::Python;
 use smallvec::smallvec;
 
-use criterion::{criterion_group, criterion_main, Criterion};
+use criterion::{criterion_group, criterion_main, Criterion, Throughput};
 use wgpu_bencher::{
     dispatch_validate, shape, wgc, wgs, CPUTensor, GPUHandle, KernelBench, KernelContextExt,
     OpMetadata, WgpuTimer, Workload,
@@ -22,83 +22,99 @@ pub struct MatmulMeta {
     aShape: glam::UVec3,
     bShape: glam::UVec3,
     outShape: glam::UVec3,
+    outShapeStrides: glam::UVec3,
+    dimInner: i32,
 }
 
-impl OpMetadata for LayerNormMeta {}
+impl OpMetadata for MatmulMeta {}
 
 #[derive(derive_new::new, Debug)]
 pub struct MatmulBenchmark {
+    B: usize,
     M: usize,
     N: usize,
     K: usize,
+    TILE_DIM: usize,
+    ROW_PER_THREAD: usize,
 }
 
 impl KernelBench for MatmulBenchmark {
-    type Metadata = LayerNormMeta;
+    type Metadata = MatmulMeta;
 
     fn name() -> &'static str {
-        "LayerNorm"
+        "MatmulBenchmark"
     }
 
-    fn source(workload: &Workload) -> String {
+    fn source(&self, workload: &Workload) -> String {
         let mut tera = tera::Tera::default();
         let mut context = tera::Context::new();
         tera.add_raw_template(Self::name(), include_str!("../../kernels/sgemm/tfjs.wgsl"))
             .unwrap();
+        context.insert("TILE_DIM", &self.TILE_DIM);
+        context.insert("ROW_PER_THREAD", &self.ROW_PER_THREAD);
         context.insert_workload(workload);
         tera.render(Self::name(), &context).unwrap()
     }
 
     fn tensors(&self) -> Vec<CPUTensor> {
-        let (M, N, K) = (self.M, self.N, self.K);
-        let a = CPUTensor::rand::<f32>(shape![M, K]);
-        let b = CPUTensor::rand::<f32>(shape![K, N]);
-        let output = CPUTensor::zeros::<f32>(shape![M, N]);
+        let (B, M, N, K) = (self.B, self.M, self.N, self.K);
+        let a = CPUTensor::rand::<f32>(shape![B, M, K]);
+        let b = CPUTensor::rand::<f32>(shape![B, K, N]);
+        let output = CPUTensor::zeros::<f32>(shape![B, M, N]);
         vec![a, b, output]
     }
 
-    fn workload(tensors: &[CPUTensor]) -> Workload {
-        let input = &tensors[0];
-        let [_B, M, _N] = input.shape().try_into().unwrap();
-        Workload::new(wgs![8, 8, 1], wgc![M as _, 1, 1])
+    fn workload(&self, _: &[CPUTensor]) -> Workload {
+        let (TILE_DIM, ROW_PER_THREAD) = (self.TILE_DIM, self.ROW_PER_THREAD);
+        let workgroup_size = wgs![(TILE_DIM / 4) as _, (TILE_DIM / ROW_PER_THREAD) as _, 1];
+        let group_x = Workload::ceil(self.N, TILE_DIM);
+        let group_y = Workload::ceil(self.M, TILE_DIM);
+        let workgroup_count = wgc![group_x as _, group_y as _, self.B as u32];
+        Workload::new(workgroup_size, workgroup_count)
     }
 
-    fn metadata(&self, tensors: &[CPUTensor]) -> Self::Metadata {
-        let input = &tensors[0];
-        let [_B, M, N] = input.shape().try_into().unwrap();
-        LayerNormMeta::new(M as _, N as _, (N / 4) as _, self.eps)
+    fn metadata(&self, _: &[CPUTensor]) -> Self::Metadata {
+        let (B, M, N, K) = (self.B, self.M, self.N, self.K);
+        let meta = MatmulMeta::new(
+            glam::UVec3::new(B as _, M as _, K as _),
+            glam::UVec3::new(B as _, K as _, N as _),
+            glam::UVec3::new(B as _, M as _, N as _),
+            glam::UVec3::new((M * N) as _, N as _, 1 as _),
+            K as _,
+        );
+        println!("META: {:?}", meta);
+        meta
     }
 
     fn validate(&self, tensors: &[CPUTensor]) {
-        let (input, scale, bias) = (&tensors[0], &tensors[1], &tensors[2]);
+        let (a, b) = (&tensors[0], &tensors[1]);
         let ground = Python::with_gil(|py| {
-            let (py_input, py_scale, py_bias) = (
-                input.to_py::<f32>(&py),
-                scale.to_py::<f32>(&py),
-                bias.to_py::<f32>(&py),
-            );
+            let (py_a, py_b) = (a.to_py::<f32>(&py), b.to_py::<f32>(&py));
             let result: Context = python! {
                 import torch
-                import torch.nn.functional as F
-
-                (input, scale, bias) = (torch.from_numpy('py_input), torch.from_numpy('py_scale), torch.from_numpy('py_bias))
-                result = F.layer_norm(input, (input.shape[-1],), weight=scale, bias=bias).numpy()
+                (a, b) = (torch.from_numpy('py_a), torch.from_numpy('py_b))
+                result = (a @ b).numpy()
             };
             CPUTensor::from(result.get_with_gil::<&PyArrayDyn<f32>>(py, "result"))
         });
         let mut gpu_tensors = dispatch_validate(TIMER.handle(), self);
-        let cpu_result = gpu_tensors.remove(3).into_cpu(TIMER.handle()).unwrap();
+        let cpu_result = gpu_tensors.remove(2).into_cpu(TIMER.handle()).unwrap();
+        println!("GROUND: {}", ground);
+        println!("OURS: {}", cpu_result);
         ground.all_close(&cpu_result, 1e-5, 1e-5).unwrap();
     }
 }
 
 pub fn benchmark(c: &mut Criterion<&WgpuTimer>) {
-    wgpu_bencher::benchmark(
-        c,
-        &TIMER,
-        LayerNorm::new(1e-5),
-        PROB_M * PROB_N * std::mem::size_of::<f32>(),
-    )
+    let B = 1;
+    let M = 1024;
+    let N = 1024;
+    let K = 1024;
+    let TILE_DIM = 32;
+    let ROW_PER_THREAD = 4;
+    let bench = MatmulBenchmark::new(B, M, N, K, TILE_DIM, ROW_PER_THREAD);
+    let throughput = Throughput::Elements(2 * (B * M * N * K) as u64);
+    wgpu_bencher::benchmark(c, &TIMER, bench, throughput)
 }
 
 criterion_group!(

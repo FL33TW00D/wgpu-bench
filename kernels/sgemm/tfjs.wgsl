@@ -56,6 +56,7 @@ struct Meta {
     bShape: vec3<i32>,
     outShape: vec3<i32>,
     outShapeStrides: vec3<i32>,
+    dimInner: i32,
 }
 
 @group(1) @binding(0)
@@ -78,7 +79,7 @@ fn main(@builtin(local_invocation_id) localId : vec3<u32>,
     let batchA = batch % metadata.aShape.x; 
     let batchB = batch % metadata.bShape.x;
 
-    let numTiles = ({{ dimInner }} - 1) / {{ TILE_DIM }} + 1;
+    let numTiles = (metadata.dimInner - 1) / {{ TILE_DIM }} + 1;
     var kStart = 0;
 
     var acc: array<vec4<f32>, {{ ROW_PER_THREAD }}>;

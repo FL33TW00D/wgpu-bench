@@ -5,7 +5,7 @@ use numpy::PyArrayDyn;
 use pyo3::Python;
 use smallvec::smallvec;
 
-use criterion::{criterion_group, criterion_main, Criterion};
+use criterion::{criterion_group, criterion_main, Criterion, Throughput};
 use wgpu_bencher::{
     dispatch_validate, shape, wgc, wgs, CPUTensor, GPUHandle, KernelBench, KernelContextExt,
     OpMetadata, WgpuTimer, Workload,
@@ -55,7 +55,7 @@ impl KernelBench for LayerNorm {
         tera.render(Self::name(), &context).unwrap()
     }
 
-    fn tensors() -> Vec<CPUTensor> {
+    fn tensors(&self) -> Vec<CPUTensor> {
         let input = CPUTensor::rand::<f32>(shape![1, PROB_M, PROB_N]);
         let scale = CPUTensor::rand::<f32>(shape![PROB_N]);
         let bias = CPUTensor::rand::<f32>(shape![PROB_N]);
@@ -99,12 +99,8 @@ impl KernelBench for LayerNorm {
 }
 
 fn benchmark(c: &mut Criterion<&WgpuTimer>) {
-    wgpu_bencher::benchmark(
-        c,
-        &TIMER,
-        LayerNorm::new(1e-5),
-        PROB_M * PROB_N * std::mem::size_of::<f32>(),
-    )
+    let throughput = Throughput::Elements((PROB_M * PROB_N) as u64);
+    wgpu_bencher::benchmark(c, &TIMER, LayerNorm::new(1e-5), throughput)
 }
 
 criterion_group!(

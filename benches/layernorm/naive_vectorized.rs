@@ -5,7 +5,7 @@ use numpy::PyArrayDyn;
 use pyo3::Python;
 use smallvec::smallvec;
 
-use criterion::{criterion_group, criterion_main, Criterion};
+use criterion::{criterion_group, criterion_main, Criterion, Throughput};
 use wgpu_bencher::{
     dispatch_validate, shape, wgc, wgs, CPUTensor, GPUHandle, KernelBench, KernelContextExt,
     OpMetadata, WgpuTimer, Workload,
@@ -98,12 +98,8 @@ impl KernelBench for LayerNorm {
 }
 
 pub fn benchmark(c: &mut Criterion<&WgpuTimer>) {
-    wgpu_bencher::benchmark(
-        c,
-        &TIMER,
-        LayerNorm::new(1e-5),
-        PROB_M * PROB_N * std::mem::size_of::<f32>(),
-    )
+    let throughput = Throughput::Elements((PROB_M * PROB_N) as u64);
+    wgpu_bencher::benchmark(c, &TIMER, LayerNorm::new(1e-5), throughput)
 }
 
 criterion_group!(

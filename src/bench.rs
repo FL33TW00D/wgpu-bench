@@ -19,17 +19,20 @@ impl KernelContextExt for tera::Context {
 pub trait KernelBench: std::fmt::Debug {
     type Metadata: OpMetadata;
     fn name() -> &'static str;
-    fn source(workload: &Workload) -> String;
+    fn source(&self, workload: &Workload) -> String;
     fn tensors(&self) -> Vec<CPUTensor>;
-    fn workload(tensors: &[CPUTensor]) -> Workload;
+    fn workload(&self, tensors: &[CPUTensor]) -> Workload;
     fn metadata(&self, tensors: &[CPUTensor]) -> Self::Metadata;
     fn validate(&self, tensors: &[CPUTensor]);
 }
 
 pub fn dispatch_validate<K: KernelBench>(handle: &GPUHandle, kernel: &K) -> Vec<GPUTensor> {
+    let _ = env_logger::builder().is_test(true).try_init();
     let tensors = kernel.tensors();
-    let workload = K::workload(&tensors);
-    let source = K::source(&workload);
+    let workload = kernel.workload(&tensors);
+    log::debug!("Workload: {:?}", workload);
+    let source = kernel.source(&workload);
+    log::debug!("Source: {:?}", source);
     let pipeline = source_to_pipeline(handle, &source);
     let uniform_buffer = kernel.metadata(&tensors).into_buffer(handle);
     let gpu_tensors = tensors
@@ -96,11 +99,10 @@ pub fn tensors_to_bind_groups(
     uniform_buffer: GPUBuffer,
     pipeline: &wgpu::ComputePipeline,
 ) -> Vec<wgpu::BindGroup> {
-    let mut buffers = tensors
+    let buffers = tensors
         .iter()
         .map(|t| t.storage().inner())
         .collect::<Vec<_>>();
-    buffers.push(&uniform_buffer);
 
     let bind_group_entries = buffers
         .iter()
@@ -111,7 +113,7 @@ pub fn tensors_to_bind_groups(
         })
         .collect::<Vec<_>>();
 
-    bind_group_entries
+    let mut standard_bind_groups = bind_group_entries
         .chunks(4)
         .enumerate()
         .map(|(i, entries)| {
@@ -123,20 +125,33 @@ pub fn tensors_to_bind_groups(
                     entries,
                 })
         })
-        .collect::<Vec<_>>()
+        .collect::<Vec<_>>();
+
+    let uniform_bind_group = handle
+        .device()
+        .create_bind_group(&wgpu::BindGroupDescriptor {
+            label: None,
+            layout: &pipeline.get_bind_group_layout(standard_bind_groups.len() as _),
+            entries: &[wgpu::BindGroupEntry {
+                binding: 0,
+                resource: uniform_buffer.as_entire_binding(),
+            }],
+        });
+    standard_bind_groups.push(uniform_bind_group);
+    standard_bind_groups
 }
 
 pub fn benchmark<K: KernelBench>(
     c: &mut Criterion<&WgpuTimer>,
     timer: &WgpuTimer,
     kernel: K,
-    bytes_per_iter: usize,
+    throughput: Throughput,
 ) {
     let handle = timer.handle();
     let tensors = kernel.tensors();
     kernel.validate(&tensors);
-    let workload = K::workload(&tensors);
-    let source = K::source(&workload);
+    let workload = kernel.workload(&tensors);
+    let source = kernel.source(&workload);
     let pipeline = source_to_pipeline(handle, &source);
     let uniform_buffer = kernel.metadata(&tensors).into_buffer(handle);
 
@@ -147,7 +162,7 @@ pub fn benchmark<K: KernelBench>(
     let bind_groups = tensors_to_bind_groups(handle, &gpu_tensors, uniform_buffer, &pipeline);
 
     let mut group = c.benchmark_group("wgpu kernel");
-    group.throughput(Throughput::Bytes(bytes_per_iter as u64));
+    group.throughput(throughput);
     //group.warm_up_time(Duration::from_secs(2)); //Limit warmup time to avoid MAX_QUERIES limit
     group.bench_function(BenchmarkId::new(K::name(), 0), |b| {
         b.iter(|| {

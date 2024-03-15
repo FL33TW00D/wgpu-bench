@@ -159,7 +159,7 @@ impl CPUTensor {
                 || abs_diff <= atol + rtol * b.abs())
             {
                 let slice = idxs.slice();
-                log::warn!(
+                log::trace!(
                     "Mismatch at {:?}: {:?} != {:?} (atol={}, rtol={})",
                     slice,
                     a,
