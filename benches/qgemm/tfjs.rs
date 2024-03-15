@@ -18,7 +18,7 @@ lazy_static::lazy_static! {
 }
 
 #[derive(ShaderType, derive_new::new, Debug)]
-pub struct SGEMMMeta {
+pub struct QGEMMMeta {
     aShape: glam::UVec3,
     bShape: glam::UVec3,
     outShape: glam::UVec3,
@@ -26,10 +26,10 @@ pub struct SGEMMMeta {
     dimInner: i32,
 }
 
-impl OpMetadata for SGEMMMeta {}
+impl OpMetadata for QGEMMMeta {}
 
 #[derive(derive_new::new, Debug)]
-pub struct SGEMMBenchmark {
+pub struct QGEMMBenchmark {
     B: usize,
     M: usize,
     N: usize,
@@ -38,7 +38,7 @@ pub struct SGEMMBenchmark {
     ROW_PER_THREAD: usize,
 }
 
-impl SGEMMBenchmark {
+impl QGEMMBenchmark {
     fn shape_fit(&self) -> [bool; 3] {
         let aOuter = self.M;
         let bOuter = self.N;
@@ -52,17 +52,17 @@ impl SGEMMBenchmark {
     }
 }
 
-impl KernelBench for SGEMMBenchmark {
-    type Metadata = SGEMMMeta;
+impl KernelBench for QGEMMBenchmark {
+    type Metadata = QGEMMMeta;
 
     fn name() -> &'static str {
-        "SGEMMBenchmark"
+        "QGEMMBenchmark"
     }
 
     fn source(&self, workload: &Workload) -> String {
         let mut tera = tera::Tera::default();
         let mut context = tera::Context::new();
-        tera.add_raw_template(Self::name(), include_str!("../../kernels/sgemm/tfjs.wgsl"))
+        tera.add_raw_template(Self::name(), include_str!("../../kernels/qgemm/tfjs.wgsl"))
             .unwrap();
         let shape_fit = self.shape_fit();
         context.insert("A_FIT", &shape_fit[0]);
@@ -94,7 +94,7 @@ impl KernelBench for SGEMMBenchmark {
 
     fn metadata(&self, _: &[CPUTensor]) -> Self::Metadata {
         let (B, M, N, K) = (self.B, self.M, self.N, self.K);
-        let meta = SGEMMMeta::new(
+        let meta = QGEMMMeta::new(
             glam::UVec3::new(B as _, M as _, K as _),
             glam::UVec3::new(B as _, K as _, N as _),
             glam::UVec3::new(B as _, M as _, N as _),
@@ -131,7 +131,7 @@ pub fn benchmark(c: &mut Criterion<&WgpuTimer>) {
     let K = 1024;
     let TILE_DIM = 32;
     let ROW_PER_THREAD = 8;
-    let bench = SGEMMBenchmark::new(B, M, N, K, TILE_DIM, ROW_PER_THREAD);
+    let bench = QGEMMBenchmark::new(B, M, N, K, TILE_DIM, ROW_PER_THREAD);
     let throughput = Throughput::Elements(2 * (B * M * N * K) as u64);
     wgpu_bencher::benchmark(c, &TIMER, bench, throughput)
 }

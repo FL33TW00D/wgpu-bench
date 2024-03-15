@@ -35,8 +35,13 @@ path = "benches/layernorm/welford_vectorized.rs"
 harness = false
 
 [[bench]]
-name = "tfjs"
+name = "sgemm"
 path = "benches/sgemm/tfjs.rs"
+harness = false
+
+[[bench]]
+name = "qgemm"
+path = "benches/qgemm/tfjs.rs"
 harness = false
 
 [dependencies]
