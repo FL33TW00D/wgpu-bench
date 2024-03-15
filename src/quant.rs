@@ -78,21 +78,41 @@ impl Quantizer {
         unsafe { CPUTensor::from_quantized(quantized_matrix, tensor.shape().clone(), DType::WQ8) }
     }
 
-    //TODO: this doesn't work
     pub fn sint8_dequantize(&self, quantized: CPUTensor) -> CPUTensor {
         assert!(quantized.dt() == DType::WQ8);
         let numel = quantized.shape().numel();
-        let packed_numel = numel / self.format.pack_size() + numel / self.format.group_size();
+
+        let aligner = |numel: usize, size_t: usize| -> usize {
+            let nbytes = numel * size_t;
+            let aligned = if nbytes % STORAGE_BUFFER_ALIGN != 0 {
+                nbytes + STORAGE_BUFFER_ALIGN - nbytes % STORAGE_BUFFER_ALIGN
+            } else {
+                nbytes
+            };
+            aligned
+        };
+
         let pack_size = self.format.pack_size();
         let group_size = self.format.group_size();
-        //Line below is invalid
-        let quantized_matrix = quantized.to_vec::<u32>().unwrap();
+
+        let num_q = numel / pack_size;
+        let num_q_bytes = num_q * std::mem::size_of::<u32>();
+        let aligned_q_bytes = aligner(num_q, std::mem::size_of::<u32>());
+
+        let num_absmax = numel / group_size;
+        let num_absmax_bytes = num_absmax * std::mem::size_of::<f32>();
+
+        let raw_bytes = quantized.storage().as_bytes();
+
+        let quantized_matrix = bytemuck::cast_slice::<u8, u32>(&raw_bytes[..num_q_bytes]);
+        let absmax_matrix = bytemuck::cast_slice::<u8, f32>(
+            &raw_bytes[aligned_q_bytes..aligned_q_bytes + num_absmax_bytes],
+        );
+
         let mut dequantized = vec![0.0f32; numel];
 
-        let absmax_start = packed_numel / group_size;
-
-        for i in (0..packed_numel).step_by(pack_size) {
-            let block_absmax = quantized_matrix[absmax_start + div_floor(i, group_size)] as f32;
+        for i in (0..numel).step_by(pack_size) {
+            let block_absmax = absmax_matrix[div_floor(i, group_size)];
             let packed_value = quantized_matrix[div_floor(i, pack_size)] as i32;
             dequantized[i] = ((packed_value << 24) >> 24) as f32 / 127.0 * block_absmax;
             dequantized[i + 1] = ((packed_value << 16) >> 24) as f32 / 127.0 * block_absmax;
@@ -126,5 +146,32 @@ impl Quantization {
             Quantization::SInt8 => 16,
             Quantization::SInt4 => 8,
         }
+    }
+}
+
+#[cfg(test)]
+mod tests {
+    use crate::shape;
+
+    #[test]
+    pub fn sint8_qdq() {
+        use crate::CPUTensor;
+        use crate::Quantization;
+        use crate::Quantizer;
+        let tensor = CPUTensor::from_slice(
+            &[
+                0.1, -0.1, 0.5, -0.5, 1.0, -1.0, 1.2, -1.2, 0.1, -0.1, 0.5, -0.5, 1.0, -1.0, 1.2,
+                -1.2, 0.1, -0.1, 0.5, -0.5, 1.0, -1.0, 1.2, -1.2, 0.1, -0.1, 0.5, -0.5, 1.0, -1.0,
+                1.2, -1.2,
+            ],
+            shape![4, 8],
+        );
+        println!("{}", tensor);
+        let quantizer = Quantizer::new(Quantization::SInt8);
+        let quantized = quantizer.quantize(tensor.clone());
+        let dequantized = quantizer.dequantize(quantized);
+        println!("{}", dequantized);
+
+        dequantized.all_close(&tensor, 1e-2, 1e-2).unwrap();
     }
 }

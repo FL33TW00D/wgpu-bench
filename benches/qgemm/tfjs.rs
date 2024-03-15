@@ -108,11 +108,10 @@ impl KernelBench for QGEMMBenchmark {
     }
 
     fn validate(&self, tensors: &[CPUTensor]) {
-        /*
         let (a, bquant) = (&tensors[0], &tensors[1]);
-        let unquantized = Quantizer::new(Quantization::SInt8).dequantize(bquant.clone());
+        let dequantized = Quantizer::new(Quantization::SInt8).dequantize(bquant.clone());
         let ground = Python::with_gil(|py| {
-            let (py_a, py_b) = (a.to_py::<f32>(&py), unquantized.to_py::<f32>(&py));
+            let (py_a, py_b) = (a.to_py::<f32>(&py), dequantized.to_py::<f32>(&py));
             let result: Context = python! {
                 import torch
                 (a, b) = (torch.from_numpy('py_a), torch.from_numpy('py_b))
@@ -120,14 +119,11 @@ impl KernelBench for QGEMMBenchmark {
             };
             CPUTensor::from(result.get_with_gil::<&PyArrayDyn<f32>>(py, "result"))
         });
-        */
         let mut gpu_tensors = dispatch_validate(TIMER.handle(), self);
         let cpu_result = gpu_tensors.remove(2).into_cpu(TIMER.handle()).unwrap();
         println!("OURS: {}", cpu_result);
-        /*
         println!("GROUND: {}", ground);
         ground.all_close(&cpu_result, 1e-2, 1e-2).unwrap();
-        */
     }
 }
 
