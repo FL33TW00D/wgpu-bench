@@ -38,6 +38,20 @@ pub struct MatmulBenchmark {
     ROW_PER_THREAD: usize,
 }
 
+impl MatmulBenchmark {
+    fn shape_fit(&self) -> [bool; 3] {
+        let aOuter = self.M;
+        let bOuter = self.N;
+        let dimInner = self.K;
+
+        let mut shape_fit = [false; 3];
+        shape_fit[0] = aOuter % self.TILE_DIM == 0;
+        shape_fit[1] = bOuter % self.TILE_DIM == 0;
+        shape_fit[2] = dimInner % self.TILE_DIM == 0;
+        shape_fit
+    }
+}
+
 impl KernelBench for MatmulBenchmark {
     type Metadata = MatmulMeta;
 
@@ -50,6 +64,11 @@ impl KernelBench for MatmulBenchmark {
         let mut context = tera::Context::new();
         tera.add_raw_template(Self::name(), include_str!("../../kernels/sgemm/tfjs.wgsl"))
             .unwrap();
+        let shape_fit = self.shape_fit();
+        context.insert("A_FIT", &shape_fit[0]);
+        context.insert("B_FIT", &shape_fit[1]);
+        context.insert("INNER_FIT", &shape_fit[2]);
+
         context.insert("TILE_DIM", &self.TILE_DIM);
         context.insert("ROW_PER_THREAD", &self.ROW_PER_THREAD);
         context.insert_workload(workload);
@@ -107,7 +126,7 @@ impl KernelBench for MatmulBenchmark {
 
 pub fn benchmark(c: &mut Criterion<&WgpuTimer>) {
     let B = 1;
-    let M = 1024;
+    let M = 1020;
     let N = 1024;
     let K = 1024;
     let TILE_DIM = 32;

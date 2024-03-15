@@ -32,7 +32,7 @@ pub fn dispatch_validate<K: KernelBench>(handle: &GPUHandle, kernel: &K) -> Vec<
     let workload = kernel.workload(&tensors);
     log::debug!("Workload: {:?}", workload);
     let source = kernel.source(&workload);
-    log::debug!("Source: {:?}", source);
+    log::debug!("Source: {}", source);
     let pipeline = source_to_pipeline(handle, &source);
     let uniform_buffer = kernel.metadata(&tensors).into_buffer(handle);
     let gpu_tensors = tensors
@@ -161,9 +161,8 @@ pub fn benchmark<K: KernelBench>(
         .collect::<Vec<_>>();
     let bind_groups = tensors_to_bind_groups(handle, &gpu_tensors, uniform_buffer, &pipeline);
 
-    let mut group = c.benchmark_group("wgpu kernel");
+    let mut group = c.benchmark_group(K::name());
     group.throughput(throughput);
-    //group.warm_up_time(Duration::from_secs(2)); //Limit warmup time to avoid MAX_QUERIES limit
     group.bench_function(BenchmarkId::new(K::name(), 0), |b| {
         b.iter(|| {
             let tsw = timer.timestamp_writes();

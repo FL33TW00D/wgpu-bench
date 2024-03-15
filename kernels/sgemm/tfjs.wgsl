@@ -23,23 +23,52 @@ fn getB(d0 : i32, d1 : i32, d2 : i32) -> vec4<f32> {
     return vec4<f32>(B[getIndexFromCoords3D(vec3<i32>(d0,d1,d2), metadata.bShape) / 4]);
 }
    
+{% if A_FIT %}
 fn mm_readA(batch: i32, row: i32, col: i32) -> vec4<f32> {
     var value = vec4<f32>(0.0);
     value = getA(batch, row, col);
     return value;
 }
+{% else %}
+fn mm_readA(batch: i32, row: i32, col: i32) -> vec4<f32> {
+    var value = vec4<f32>(0.0);
+    if (row < metadata.aShape.y && col < metadata.aShape.z) {
+        value = getA(batch, row, col);
+    }
+    return value;
+}
+{% endif %}
 
+{% if B_FIT %}
 fn mm_readB(batch: i32, row: i32, col: i32) -> vec4<f32> {
     var value = vec4<f32>(0.0);
     value = getB(batch, row, col);
     return value;
 }
+{% else %}
+fn mm_readB(batch: i32, row: i32, col: i32) -> vec4<f32> {
+    var value = vec4<f32>(0.0);
+    if (row < metadata.bShape.y && col < metadata.bShape.z) {
+        value = getB(batch, row, col);
+    }
+    return value;
+}
+{% endif %}
   
 fn mm_write(batch: i32, row: i32, col: i32, valueIn: vec4<f32>) {
-    var value = valueIn;
-    let coords = vec3<i32>(batch, row, col);
-    setOutputAtCoords(coords[0], coords[1], coords[2], value);
+{% if OUT_FIT %}
+        var value = valueIn;
+        let coords = vec3<i32>(batch, row, col);
+        setOutputAtCoords(coords[0], coords[1], coords[2], value);
+{% else %}
+    if (row < metadata.outShape.y && col < metadata.outShape.z) {
+        var value = valueIn;
+        let coords = vec3<i32>(batch, row, col);
+        setOutputAtCoords(coords[0], coords[1], coords[2], valueIn);
+    }
+{% endif %}
 }
+
       
 var<private> localId: vec3<u32>;
 var<private> globalId: vec3<u32>;
