@@ -77,8 +77,8 @@ impl KernelBench for MatmulBenchmark {
 
     fn tensors(&self) -> Vec<CPUTensor> {
         let (B, M, N, K) = (self.B, self.M, self.N, self.K);
-        let a = CPUTensor::rand::<f32>(shape![B, M, K]);
-        let b = CPUTensor::rand::<f32>(shape![B, K, N]);
+        let a = CPUTensor::randn::<f32>(shape![B, M, K]);
+        let b = CPUTensor::randn::<f32>(shape![B, K, N]);
         let output = CPUTensor::zeros::<f32>(shape![B, M, N]);
         vec![a, b, output]
     }

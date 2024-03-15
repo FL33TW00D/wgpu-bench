@@ -55,9 +55,9 @@ impl KernelBench for LayerNormBench {
 
     fn tensors(&self) -> Vec<CPUTensor> {
         let (M, N) = (self.M, self.N);
-        let input = CPUTensor::rand::<f32>(shape![1, M, N]);
-        let scale = CPUTensor::rand::<f32>(shape![N]);
-        let bias = CPUTensor::rand::<f32>(shape![N]);
+        let input = CPUTensor::randn::<f32>(shape![1, M, N]);
+        let scale = CPUTensor::randn::<f32>(shape![N]);
+        let bias = CPUTensor::randn::<f32>(shape![N]);
         let output = CPUTensor::zeros::<f32>(shape![1, M, N]);
         vec![input, scale, bias, output]
     }

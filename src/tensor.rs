@@ -1,12 +1,8 @@
 use bytemuck::NoUninit;
 use ndarray::Dimension;
 use numpy::ndarray::{ArrayD, ArrayViewD};
-use rand::{
-    distributions::uniform::SampleUniform,
-    prelude::{Distribution, SeedableRng},
-    rngs::SmallRng,
-};
-use rand_distr::Poisson;
+use rand::{distributions::uniform::SampleUniform, prelude::SeedableRng, rngs::SmallRng};
+use rand_distr::{Distribution, Poisson};
 
 use numpy::PyArrayDyn;
 use wgpu::BufferUsages;

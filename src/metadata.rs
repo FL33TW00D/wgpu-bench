@@ -4,6 +4,7 @@ use crate::{GPUBuffer, GPUHandle};
 
 pub const UNIFORM_ALIGN: usize = 256;
 pub const STORAGE_BUFFER_ALIGN: usize = 256;
+pub const MIN_STORAGE_BUFFER_SIZE: usize = 16;
 
 pub trait OpMetadata: Sized + ShaderType + WriteInto + std::fmt::Debug {
     fn into_buffer(&self, handle: &GPUHandle) -> GPUBuffer {

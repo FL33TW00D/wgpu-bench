@@ -62,5 +62,5 @@ npyz = "0.8.1"
 ndarray = "0.15.6"
 rand_distr = "0.4.3"
 env_logger = "0.11.3"
-half = "2.4.0"
+half = { version = "2.4.0", features=["num-traits", "bytemuck"]}
 num = "0.4.1"
