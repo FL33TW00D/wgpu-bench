@@ -111,7 +111,7 @@ pub fn benchmark(c: &mut Criterion<&WgpuTimer>) {
     let N = 1024;
     let K = 1024;
     let TILE_DIM = 32;
-    let ROW_PER_THREAD = 4;
+    let ROW_PER_THREAD = 8;
     let bench = MatmulBenchmark::new(B, M, N, K, TILE_DIM, ROW_PER_THREAD);
     let throughput = Throughput::Elements(2 * (B * M * N * K) as u64);
     wgpu_bencher::benchmark(c, &TIMER, bench, throughput)

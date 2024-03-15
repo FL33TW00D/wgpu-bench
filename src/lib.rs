@@ -226,8 +226,6 @@ impl ValueFormatter for WgpuTimerFormatter {
     }
 
     fn format_throughput(&self, throughput: &Throughput, value: f64) -> String {
-        println!("Throughput: {:?}", throughput);
-        println!("Nanoseconds: {:?}", value);
         match throughput {
             Throughput::Bytes(b) => format!(
                 "{:.4} GiB/s",
