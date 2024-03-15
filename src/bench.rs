@@ -100,8 +100,9 @@ pub fn tensors_to_bind_groups(
     pipeline: &wgpu::ComputePipeline,
 ) -> Vec<wgpu::BindGroup> {
     let mut bind_group_entries = vec![];
+
     for tensor in tensors {
-        bind_group_entries.append(&mut tensor.bindings());
+        bind_group_entries.append(&mut tensor.bindings(bind_group_entries.len()));
     }
 
     let mut standard_bind_groups = bind_group_entries

@@ -91,9 +91,24 @@ impl CPUTensor {
         shape: Shape,
         dt: DType,
     ) -> CPUTensor {
-        let bytes: &[u8] = bytemuck::cast_slice(data.as_ref());
-        let mut tensor = Tensor::uninitialized(dt, shape, dt.size_of()).unwrap();
-        tensor.storage_mut().as_bytes_mut().copy_from_slice(bytes);
+        let raw_data = data.as_ref();
+        let data_bytes: &[u8] = bytemuck::cast_slice(raw_data);
+        let n_bytes = data_bytes.len();
+
+        let layout = std::alloc::Layout::from_size_align(n_bytes, dt.size_of()).unwrap();
+        let data = if n_bytes == 0 {
+            std::ptr::null()
+        } else {
+            let ptr = std::alloc::alloc(layout);
+            assert!(!ptr.is_null());
+            ptr
+        } as *mut u8;
+        let storage = CPUStorage::new(data, layout);
+        let mut tensor = Tensor::new(dt, shape, storage);
+        tensor
+            .storage_mut()
+            .as_bytes_mut()
+            .copy_from_slice(data_bytes);
         tensor
     }
 
@@ -257,25 +272,24 @@ impl GPUTensor {
     /// Generates the bind group entries required to bind the tensor to a kernel.
     /// Quantized tensors may use multiple bind groups.
     /// Unquantized tensors should only use a single bind group.
-    pub(crate) fn bindings(&self) -> Vec<BindGroupEntry> {
+    pub(crate) fn bindings(&self, current_binding: usize) -> Vec<BindGroupEntry> {
         let buf = self.storage().inner();
         let numel = self.shape().numel();
         let segments = self.dt().segments(numel, buf.size() as usize);
-        segments
-            .iter()
-            .enumerate()
-            .fold(vec![], |mut entries, (idx, segment)| {
-                let (offset, size) = (segment.offset, segment.size);
-                entries.push(BindGroupEntry {
-                    binding: idx as u32,
-                    resource: BindingResource::Buffer(wgpu::BufferBinding {
-                        buffer: buf,
-                        offset,
-                        size,
-                    }),
-                });
-                entries
-            })
+
+        let mut entries = vec![];
+        for (idx, seg) in segments.iter().enumerate() {
+            let (offset, size) = (seg.offset, seg.size);
+            entries.push(BindGroupEntry {
+                binding: ((current_binding + idx) % 4) as _,
+                resource: BindingResource::Buffer(wgpu::BufferBinding {
+                    buffer: buf,
+                    offset,
+                    size,
+                }),
+            });
+        }
+        entries
     }
 
     fn read_to_host<A: NoUninit>(shape: Shape, dt: DType, bytes: &[A]) -> CPUTensor {

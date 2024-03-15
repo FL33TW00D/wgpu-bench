@@ -162,5 +162,4 @@ fn main(@builtin(local_invocation_id) localId : vec3<u32>,
     {% for innerRow in range(end=ROW_PER_THREAD) %}
         mm_write(batch, globalRow + {{ innerRow }}, globalCol, acc[{{ innerRow }}]);
     {% endfor %}
-  }
 }
