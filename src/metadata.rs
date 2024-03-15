@@ -3,31 +3,27 @@ use encase::{private::WriteInto, ShaderType, UniformBuffer};
 use crate::{GPUBuffer, GPUHandle};
 
 pub const UNIFORM_ALIGN: usize = 256;
+pub const STORAGE_BUFFER_ALIGN: usize = 256;
+pub const MIN_STORAGE_BUFFER_SIZE: usize = 16;
 
 pub trait OpMetadata: Sized + ShaderType + WriteInto + std::fmt::Debug {
-    const __IS_VALID_META: () = {
-        assert!(std::mem::size_of::<Self>() <= UNIFORM_ALIGN);
-    };
-
-    fn n_bytes(&self) -> usize {
-        std::mem::size_of::<Self>()
-    }
-
     fn into_buffer(&self, handle: &GPUHandle) -> GPUBuffer {
-        let mut cpu_uniform = UniformBuffer::new(Vec::with_capacity(self.n_bytes()));
+        let size: usize = self.size().get() as _;
+        let aligned_size = size + (UNIFORM_ALIGN - size % UNIFORM_ALIGN);
 
-        cpu_uniform.write(self).unwrap();
+        let mut uniform = UniformBuffer::new(Vec::with_capacity(aligned_size));
+        uniform.write(self).unwrap();
 
         let buffer = handle.device().create_buffer(&wgpu::BufferDescriptor {
             label: None,
-            size: self.n_bytes() as u64,
+            size: aligned_size as u64,
             usage: wgpu::BufferUsages::UNIFORM | wgpu::BufferUsages::COPY_DST,
             mapped_at_creation: false,
         });
 
         handle
             .queue()
-            .write_buffer(&buffer, 0, bytemuck::cast_slice(&cpu_uniform.into_inner()));
+            .write_buffer(&buffer, 0, bytemuck::cast_slice(&uniform.into_inner()));
         buffer.into()
     }
 }

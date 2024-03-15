@@ -6,26 +6,42 @@ edition = "2021"
 # See more keys and their definitions at https://doc.rust-lang.org/cargo/reference/manifest.html
 [[bench]]
 name = "naive"
+path = "benches/layernorm/naive.rs"
 harness = false
 
 [[bench]]
 name = "naive_vectorized"
+path = "benches/layernorm/naive_vectorized.rs"
 harness = false
 
 [[bench]]
 name = "naive_onepass"
+path = "benches/layernorm/naive_onepass.rs"
 harness = false
 
 [[bench]]
 name = "naive_vectorized_onepass"
+path = "benches/layernorm/naive_vectorized_onepass.rs"
 harness = false
 
 [[bench]]
 name = "welford_scalar"
+path = "benches/layernorm/welford_scalar.rs"
 harness = false
 
 [[bench]]
 name = "welford_vectorized"
+path = "benches/layernorm/welford_vectorized.rs"
+harness = false
+
+[[bench]]
+name = "sgemm"
+path = "benches/sgemm/tfjs.rs"
+harness = false
+
+[[bench]]
+name = "qgemm"
+path = "benches/qgemm/tfjs.rs"
 harness = false
 
 [dependencies]
@@ -40,13 +56,16 @@ criterion = "0.5.1"
 wgpu = { git="https://github.com/FL33TW00D/wgpu", branch="master", features=["expose-ids"]}
 pollster = "0.3.0"
 lazy_static = "1.4.0"
-encase = "0.6.1"
+glam = "0.25.0"
+encase = { version = "0.7", features=["glam"] }
 derive-new = "0.6.0"
 tera = "1.19.1"
-
 inline-python = { version = "0.12.0"}
 numpy = { version = "0.19.0"}
 pyo3 = { version = "0.19.1"}
 npyz = "0.8.1"
 ndarray = "0.15.6"
 rand_distr = "0.4.3"
+env_logger = "0.11.3"
+half = { version = "2.4.0", features=["num-traits", "bytemuck"]}
+num = "0.4.1"

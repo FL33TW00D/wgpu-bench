@@ -1,8 +1,10 @@
+#![feature(int_roundings)]
 mod bench;
 mod data;
 mod dtype;
 mod handle;
 mod metadata;
+mod quant;
 mod shape;
 mod storage;
 mod tensor;
@@ -15,6 +17,7 @@ pub use data::*;
 pub use dtype::*;
 pub use handle::*;
 pub use metadata::*;
+pub use quant::*;
 pub use shape::*;
 pub use storage::*;
 pub use tensor::*;
@@ -72,6 +75,8 @@ unsafe impl Send for WgpuTimer {}
 unsafe impl Sync for WgpuTimer {}
 
 impl WgpuTimer {
+    pub const COMPUTE_PER_QUERY: u64 = 100;
+
     pub fn new(handle: GPUHandle) -> Self {
         let query_set = handle.device().create_query_set(&wgpu::QuerySetDescriptor {
             count: MAX_QUERIES,
@@ -106,10 +111,10 @@ impl WgpuTimer {
 
     pub fn resolve_pass(&self, encoder: &mut wgpu::CommandEncoder, pass_query: QueryPair) {
         let resolution_range = pass_query.into();
-        log::info!("Resolution range: {:?}", resolution_range);
+        log::trace!("Resolution range: {:?}", resolution_range);
         encoder.resolve_query_set(&self.query_set, resolution_range, &self.resolve_buffer, 0);
         let size = pass_query.size();
-        log::info!("Resolution size in bytes: {:?}", size);
+        log::trace!("Resolution size in bytes: {:?}", size);
         encoder.copy_buffer_to_buffer(&self.resolve_buffer, 0, &self.destination_buffer, 0, size);
     }
 
@@ -155,15 +160,6 @@ impl WgpuTimer {
     }
 }
 
-/// Criterion + wgpu
-/// To avoid recording overhead, we use `wgpu::ComputePassTimestampWrites`, which
-/// records the execution of the compute pass only.
-///
-/// Each benchmark iteration is a single compute pass.
-/// To get the total execution time of the benchmark run, we sum the elapsed time
-/// for each compute pass.
-///
-/// This approach is not perfect and seems quite noisy.
 impl Measurement for &WgpuTimer {
     type Intermediate = u32; // Index of the start query
 
@@ -171,12 +167,12 @@ impl Measurement for &WgpuTimer {
                       // Must be multiplied by the timestamp period to get nanoseconds
 
     fn start(&self) -> Self::Intermediate {
-        log::info!("\nQuery at start of pass: {:?}", self.current_query());
+        log::trace!("\nQuery at start of pass: {:?}", self.current_query());
         0
     }
 
     fn end(&self, start_index: Self::Intermediate) -> Self::Value {
-        log::info!("\nQuery at end of pass: {:?}", self.current_query());
+        log::trace!("\nQuery at end of pass: {:?}", self.current_query());
         let mut encoder = self
             .handle
             .device()
@@ -185,10 +181,9 @@ impl Measurement for &WgpuTimer {
         //Large window, eg 0..512
         let pass_query = QueryPair {
             start: start_index,
-            end: self.current_query().end - 2, //we have to decrement here because we increment at
-                                               //the end of each iter
+            end: self.current_query().end - 2, //decrement here to counteract last iter
         };
-        log::info!("Pass range: {:?}", pass_query);
+        log::trace!("Pass range: {:?}", pass_query);
 
         self.resolve_pass(&mut encoder, pass_query);
         self.handle().queue().submit(Some(encoder.finish()));
@@ -200,14 +195,13 @@ impl Measurement for &WgpuTimer {
         self.handle.device().poll(wgpu::Maintain::Wait);
         let timestamps: Vec<u64> = {
             let byte_range = pass_query.start_address()..pass_query.end_address();
-            log::info!("Byte range: {:?}", byte_range);
             let timestamp_view = self.destination_buffer.slice(byte_range).get_mapped_range();
             (*bytemuck::cast_slice(&timestamp_view)).to_vec()
         };
-        log::info!("Timestamps: {:?}", timestamps);
+        log::trace!("Timestamps: {:?}", timestamps);
         self.destination_buffer.unmap();
         self.current_query.set(QueryPair::first());
-        self.hardware_elapsed(&timestamps)
+        self.hardware_elapsed(&timestamps) / WgpuTimer::COMPUTE_PER_QUERY
     }
 
     fn add(&self, v1: &Self::Value, v2: &Self::Value) -> Self::Value {
@@ -240,7 +234,12 @@ impl ValueFormatter for WgpuTimerFormatter {
                 "{:.4} GiB/s",
                 (*b as f64) / (1024.0 * 1024.0 * 1024.0) / (value * 1e-9)
             ),
-            Throughput::Elements(b) => format!("{:.4} elements/s", (*b as f64) / (value * 1e-9)),
+            Throughput::Elements(e) => {
+                let gflop = (*e as f64) / 1e9;
+                let seconds = value * 1e-9;
+                let gigaflop_per_second = gflop / seconds;
+                format!("{:.4} GFLOP/s", gigaflop_per_second)
+            }
             _ => unreachable!(),
         }
     }

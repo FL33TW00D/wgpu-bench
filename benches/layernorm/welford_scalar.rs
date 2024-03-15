@@ -5,10 +5,10 @@ use numpy::PyArrayDyn;
 use pyo3::Python;
 use smallvec::smallvec;
 
-use criterion::{criterion_group, criterion_main, Criterion};
+use criterion::{criterion_group, criterion_main, Criterion, Throughput};
 use wgpu_bencher::{
-    dispatch_validate, shape, wgc, wgs, CPUTensor, GPUHandle, Kernel, KernelContextExt, OpMetadata,
-    WgpuTimer, Workload,
+    dispatch_validate, shape, wgc, wgs, CPUTensor, GPUHandle, KernelBench, KernelContextExt,
+    OpMetadata, WgpuTimer, Workload,
 };
 
 lazy_static::lazy_static! {
@@ -36,7 +36,7 @@ const PROB_M: usize = 2048;
 const PROB_N: usize = 512;
 const WARP_SIZE: usize = 32;
 
-impl Kernel for LayerNorm {
+impl KernelBench for LayerNorm {
     type Metadata = LayerNormMeta;
 
     fn name() -> &'static str {
@@ -48,17 +48,17 @@ impl Kernel for LayerNorm {
         let mut context = tera::Context::new();
         tera.add_raw_template(
             Self::name(),
-            include_str!("../kernels/layernorm_scalar_welford.wgsl"),
+            include_str!("../../kernels/layernorm/welford_scalar.wgsl"),
         )
         .unwrap();
         context.insert_workload(workload);
         tera.render(Self::name(), &context).unwrap()
     }
 
-    fn tensors() -> Vec<CPUTensor> {
-        let input = CPUTensor::rand::<f32>(shape![1, PROB_M, PROB_N]);
-        let scale = CPUTensor::rand::<f32>(shape![PROB_N]);
-        let bias = CPUTensor::rand::<f32>(shape![PROB_N]);
+    fn tensors(&self) -> Vec<CPUTensor> {
+        let input = CPUTensor::randn::<f32>(shape![1, PROB_M, PROB_N]);
+        let scale = CPUTensor::randn::<f32>(shape![PROB_N]);
+        let bias = CPUTensor::randn::<f32>(shape![PROB_N]);
         let output = CPUTensor::zeros::<f32>(shape![1, PROB_M, PROB_N]);
         vec![input, scale, bias, output]
     }
@@ -98,13 +98,9 @@ impl Kernel for LayerNorm {
     }
 }
 
-pub fn benchmark(c: &mut Criterion<&WgpuTimer>) {
-    wgpu_bencher::benchmark(
-        c,
-        &TIMER,
-        LayerNorm::new(1e-5),
-        PROB_M * PROB_N * std::mem::size_of::<f32>(),
-    )
+fn benchmark(c: &mut Criterion<&WgpuTimer>) {
+    let throughput = Throughput::Elements((PROB_M * PROB_N) as u64);
+    wgpu_bencher::benchmark(c, &TIMER, LayerNorm::new(1e-5), throughput)
 }
 
 criterion_group!(

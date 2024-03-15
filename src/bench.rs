@@ -1,4 +1,4 @@
-use std::{borrow::Cow, time::Duration};
+use std::borrow::Cow;
 
 use criterion::{BenchmarkId, Criterion, Throughput};
 
@@ -16,21 +16,23 @@ impl KernelContextExt for tera::Context {
     }
 }
 
-// Implemented by all kernels that want to be benchmarked
-pub trait Kernel: std::fmt::Debug {
+pub trait KernelBench: std::fmt::Debug {
     type Metadata: OpMetadata;
     fn name() -> &'static str;
-    fn source(workload: &Workload) -> String;
-    fn tensors() -> Vec<CPUTensor>;
-    fn workload(tensors: &[CPUTensor]) -> Workload;
+    fn source(&self, workload: &Workload) -> String;
+    fn tensors(&self) -> Vec<CPUTensor>;
+    fn workload(&self, tensors: &[CPUTensor]) -> Workload;
     fn metadata(&self, tensors: &[CPUTensor]) -> Self::Metadata;
     fn validate(&self, tensors: &[CPUTensor]);
 }
 
-pub fn dispatch_validate<K: Kernel>(handle: &GPUHandle, kernel: &K) -> Vec<GPUTensor> {
-    let tensors = K::tensors();
-    let workload = K::workload(&tensors);
-    let source = K::source(&workload);
+pub fn dispatch_validate<K: KernelBench>(handle: &GPUHandle, kernel: &K) -> Vec<GPUTensor> {
+    let _ = env_logger::builder().is_test(true).try_init();
+    let tensors = kernel.tensors();
+    let workload = kernel.workload(&tensors);
+    log::debug!("Workload: {:?}", workload);
+    let source = kernel.source(&workload);
+    log::debug!("Source: {}", source);
     let pipeline = source_to_pipeline(handle, &source);
     let uniform_buffer = kernel.metadata(&tensors).into_buffer(handle);
     let gpu_tensors = tensors
@@ -38,20 +40,7 @@ pub fn dispatch_validate<K: Kernel>(handle: &GPUHandle, kernel: &K) -> Vec<GPUTe
         .map(|t| t.into_gpu(handle))
         .collect::<Vec<_>>();
     let bind_groups = tensors_to_bind_groups(handle, &gpu_tensors, uniform_buffer, &pipeline);
-    let mut encoder = handle
-        .device()
-        .create_command_encoder(&wgpu::CommandEncoderDescriptor { label: None });
-    {
-        let mut cpass = encoder.begin_compute_pass(&wgpu::ComputePassDescriptor::default());
-        for (i, bind_group) in bind_groups.iter().enumerate() {
-            cpass.set_bind_group(i as _, bind_group, &[]);
-        }
-        cpass.set_pipeline(&pipeline);
-        let (x, y, z) = workload.count().as_tuple();
-        cpass.dispatch_workgroups(x, y, z);
-    }
-    handle.queue().submit(Some(encoder.finish()));
-    handle.device().poll(wgpu::Maintain::Wait);
+    dispatch(handle, &workload, &bind_groups, &pipeline, None);
     gpu_tensors
 }
 
@@ -61,7 +50,7 @@ pub fn dispatch(
     workload: &Workload,
     bind_groups: &[wgpu::BindGroup],
     pipeline: &wgpu::ComputePipeline,
-    timer: &WgpuTimer,
+    timestamp_writes: Option<wgpu::ComputePassTimestampWrites>,
 ) {
     let mut encoder = handle
         .device()
@@ -69,14 +58,16 @@ pub fn dispatch(
     {
         let mut cpass = encoder.begin_compute_pass(&wgpu::ComputePassDescriptor {
             label: None,
-            timestamp_writes: Some(timer.timestamp_writes()),
+            timestamp_writes,
         });
         for (i, bind_group) in bind_groups.iter().enumerate() {
             cpass.set_bind_group(i as _, bind_group, &[]);
         }
         cpass.set_pipeline(pipeline);
         let (x, y, z) = workload.count().as_tuple();
-        cpass.dispatch_workgroups(x, y, z);
+        for _ in 0..WgpuTimer::COMPUTE_PER_QUERY {
+            cpass.dispatch_workgroups(x, y, z);
+        }
     }
     handle.queue().submit(Some(encoder.finish()));
     handle.device().poll(wgpu::Maintain::Wait);
@@ -108,22 +99,13 @@ pub fn tensors_to_bind_groups(
     uniform_buffer: GPUBuffer,
     pipeline: &wgpu::ComputePipeline,
 ) -> Vec<wgpu::BindGroup> {
-    let mut buffers = tensors
-        .iter()
-        .map(|t| t.storage().inner())
-        .collect::<Vec<_>>();
-    buffers.push(&uniform_buffer);
+    let mut bind_group_entries = vec![];
 
-    let bind_group_entries = buffers
-        .iter()
-        .enumerate()
-        .map(|(i, buffer)| wgpu::BindGroupEntry {
-            binding: (i % 4) as u32,
-            resource: buffer.as_entire_binding(),
-        })
-        .collect::<Vec<_>>();
+    for tensor in tensors {
+        bind_group_entries.append(&mut tensor.bindings(bind_group_entries.len()));
+    }
 
-    bind_group_entries
+    let mut standard_bind_groups = bind_group_entries
         .chunks(4)
         .enumerate()
         .map(|(i, entries)| {
@@ -135,20 +117,33 @@ pub fn tensors_to_bind_groups(
                     entries,
                 })
         })
-        .collect::<Vec<_>>()
+        .collect::<Vec<_>>();
+
+    let uniform_bind_group = handle
+        .device()
+        .create_bind_group(&wgpu::BindGroupDescriptor {
+            label: None,
+            layout: &pipeline.get_bind_group_layout(standard_bind_groups.len() as _),
+            entries: &[wgpu::BindGroupEntry {
+                binding: 0,
+                resource: uniform_buffer.as_entire_binding(),
+            }],
+        });
+    standard_bind_groups.push(uniform_bind_group);
+    standard_bind_groups
 }
 
-pub fn benchmark<K: Kernel>(
+pub fn benchmark<K: KernelBench>(
     c: &mut Criterion<&WgpuTimer>,
     timer: &WgpuTimer,
     kernel: K,
-    bytes_per_iter: usize,
+    throughput: Throughput,
 ) {
     let handle = timer.handle();
-    let tensors = K::tensors();
+    let tensors = kernel.tensors();
     kernel.validate(&tensors);
-    let workload = K::workload(&tensors);
-    let source = K::source(&workload);
+    let workload = kernel.workload(&tensors);
+    let source = kernel.source(&workload);
     let pipeline = source_to_pipeline(handle, &source);
     let uniform_buffer = kernel.metadata(&tensors).into_buffer(handle);
 
@@ -158,12 +153,12 @@ pub fn benchmark<K: Kernel>(
         .collect::<Vec<_>>();
     let bind_groups = tensors_to_bind_groups(handle, &gpu_tensors, uniform_buffer, &pipeline);
 
-    let mut group = c.benchmark_group("wgpu kernel");
-    group.throughput(Throughput::Bytes(bytes_per_iter as u64));
-    group.warm_up_time(Duration::from_secs(2)); //Limit warmup time to avoid MAX_QUERIES limit
+    let mut group = c.benchmark_group(K::name());
+    group.throughput(throughput);
     group.bench_function(BenchmarkId::new(K::name(), 0), |b| {
         b.iter(|| {
-            dispatch(handle, &workload, &bind_groups, &pipeline, timer);
+            let tsw = timer.timestamp_writes();
+            dispatch(handle, &workload, &bind_groups, &pipeline, Some(tsw));
             timer.increment_query();
         });
     });

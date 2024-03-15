@@ -1,15 +1,11 @@
 use bytemuck::NoUninit;
 use ndarray::Dimension;
 use numpy::ndarray::{ArrayD, ArrayViewD};
-use rand::{
-    distributions::uniform::SampleUniform,
-    prelude::{Distribution, SeedableRng},
-    rngs::SmallRng,
-};
-use rand_distr::Poisson;
+use rand::{distributions::uniform::SampleUniform, prelude::SeedableRng, rngs::SmallRng};
+use rand_distr::{Distribution, Poisson};
 
 use numpy::PyArrayDyn;
-use wgpu::BufferUsages;
+use wgpu::{BindGroupEntry, BindingResource, BufferUsages};
 
 use crate::storage::{CPUStorage, GPUStorage};
 use crate::DType;
@@ -75,6 +71,12 @@ impl CPUTensor {
         Ok(Tensor::new(dt, shape, storage))
     }
 
+    pub fn to_vec<T: DataType>(&self) -> anyhow::Result<Vec<T>> {
+        let bytes = self.storage().as_bytes();
+        let data = bytemuck::cast_slice(bytes);
+        Ok(data.to_vec())
+    }
+
     pub fn from_slice<T: DataType>(data: &[T], shape: Shape) -> Self {
         assert_eq!(data.len(), shape.numel());
         let bytes: &[u8] = bytemuck::cast_slice(data);
@@ -84,7 +86,33 @@ impl CPUTensor {
         tensor
     }
 
-    pub fn rand<T: num_traits::Float + DataType + SampleUniform>(shape: Shape) -> Self {
+    pub unsafe fn from_quantized<T: DataType, U: AsRef<[T]>>(
+        data: U,
+        shape: Shape,
+        dt: DType,
+    ) -> CPUTensor {
+        let raw_data = data.as_ref();
+        let data_bytes: &[u8] = bytemuck::cast_slice(raw_data);
+        let n_bytes = data_bytes.len();
+
+        let layout = std::alloc::Layout::from_size_align(n_bytes, dt.size_of()).unwrap();
+        let data = if n_bytes == 0 {
+            std::ptr::null()
+        } else {
+            let ptr = std::alloc::alloc(layout);
+            assert!(!ptr.is_null());
+            ptr
+        } as *mut u8;
+        let storage = CPUStorage::new(data, layout);
+        let mut tensor = Tensor::new(dt, shape, storage);
+        tensor
+            .storage_mut()
+            .as_bytes_mut()
+            .copy_from_slice(data_bytes);
+        tensor
+    }
+
+    pub fn randn<T: num_traits::Float + DataType + SampleUniform>(shape: Shape) -> Self {
         let between = Poisson::new(11.0).unwrap();
         let mut rng: SmallRng = SeedableRng::seed_from_u64(42);
         let rand_vec = (0..shape.numel())
@@ -159,7 +187,7 @@ impl CPUTensor {
                 || abs_diff <= atol + rtol * b.abs())
             {
                 let slice = idxs.slice();
-                log::warn!(
+                log::trace!(
                     "Mismatch at {:?}: {:?} != {:?} (atol={}, rtol={})",
                     slice,
                     a,
@@ -238,11 +266,38 @@ impl<T: DataType> From<ArrayD<T>> for CPUTensor {
 pub type GPUTensor = Tensor<GPUStorage>;
 
 impl GPUTensor {
+    /// # Bindings
+    ///
+    /// Only applicable to GPU tensors.
+    /// Generates the bind group entries required to bind the tensor to a kernel.
+    /// Quantized tensors may use multiple bind groups.
+    /// Unquantized tensors should only use a single bind group.
+    pub(crate) fn bindings(&self, current_binding: usize) -> Vec<BindGroupEntry> {
+        let buf = self.storage().inner();
+        let numel = self.shape().numel();
+        let segments = self.dt().segments(numel, buf.size() as usize);
+
+        let mut entries = vec![];
+        for (idx, seg) in segments.iter().enumerate() {
+            let (offset, size) = (seg.offset, seg.size);
+            entries.push(BindGroupEntry {
+                binding: ((current_binding + idx) % 4) as _,
+                resource: BindingResource::Buffer(wgpu::BufferBinding {
+                    buffer: buf,
+                    offset,
+                    size,
+                }),
+            });
+        }
+        entries
+    }
+
     fn read_to_host<A: NoUninit>(shape: Shape, dt: DType, bytes: &[A]) -> CPUTensor {
         match dt {
             DType::F32 => CPUTensor::from_slice::<f32>(bytemuck::cast_slice(bytes), shape),
             DType::I32 => CPUTensor::from_slice::<i32>(bytemuck::cast_slice(bytes), shape),
             DType::U32 => CPUTensor::from_slice::<u32>(bytemuck::cast_slice(bytes), shape),
+            _ => panic!("Unsupported dtype"),
         }
     }
 

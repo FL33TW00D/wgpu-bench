@@ -5,10 +5,10 @@ use numpy::PyArrayDyn;
 use pyo3::Python;
 use smallvec::smallvec;
 
-use criterion::{criterion_group, criterion_main, Criterion};
+use criterion::{criterion_group, criterion_main, Criterion, Throughput};
 use wgpu_bencher::{
-    dispatch_validate, shape, wgc, wgs, CPUTensor, GPUHandle, Kernel, KernelContextExt, OpMetadata,
-    WgpuTimer, Workload,
+    dispatch_validate, shape, wgc, wgs, CPUTensor, GPUHandle, KernelBench, KernelContextExt,
+    OpMetadata, WgpuTimer, Workload,
 };
 
 lazy_static::lazy_static! {
@@ -28,18 +28,17 @@ pub struct LayerNormMeta {
 impl OpMetadata for LayerNormMeta {}
 
 #[derive(derive_new::new, Debug)]
-pub struct LayerNorm {
+pub struct LayerNormBench {
+    M: usize,
+    N: usize,
     eps: f32,
 }
 
-const PROB_M: usize = 2048;
-const PROB_N: usize = 512;
-
-impl Kernel for LayerNorm {
+impl KernelBench for LayerNormBench {
     type Metadata = LayerNormMeta;
 
     fn name() -> &'static str {
-        "LayerNormOnePass"
+        "LayerNorm"
     }
 
     fn source(workload: &Workload) -> String {
@@ -47,18 +46,19 @@ impl Kernel for LayerNorm {
         let mut context = tera::Context::new();
         tera.add_raw_template(
             Self::name(),
-            include_str!("../kernels/layernorm_scalar_onepass.wgsl"),
+            include_str!("../../kernels/layernorm/naive_scalar.wgsl"),
         )
         .unwrap();
         context.insert_workload(workload);
         tera.render(Self::name(), &context).unwrap()
     }
 
-    fn tensors() -> Vec<CPUTensor> {
-        let input = CPUTensor::rand::<f32>(shape![1, PROB_M, PROB_N]);
-        let scale = CPUTensor::rand::<f32>(shape![PROB_N]);
-        let bias = CPUTensor::rand::<f32>(shape![PROB_N]);
-        let output = CPUTensor::zeros::<f32>(shape![1, PROB_M, PROB_N]);
+    fn tensors(&self) -> Vec<CPUTensor> {
+        let (M, N) = (self.M, self.N);
+        let input = CPUTensor::randn::<f32>(shape![1, M, N]);
+        let scale = CPUTensor::randn::<f32>(shape![N]);
+        let bias = CPUTensor::randn::<f32>(shape![N]);
+        let output = CPUTensor::zeros::<f32>(shape![1, M, N]);
         vec![input, scale, bias, output]
     }
 
@@ -93,17 +93,16 @@ impl Kernel for LayerNorm {
         });
         let mut gpu_tensors = dispatch_validate(TIMER.handle(), self);
         let cpu_result = gpu_tensors.remove(3).into_cpu(TIMER.handle()).unwrap();
-        ground.all_close(&cpu_result, 1e-4, 1e-4).unwrap();
+        ground.all_close(&cpu_result, 1e-5, 1e-5).unwrap();
     }
 }
 
 pub fn benchmark(c: &mut Criterion<&WgpuTimer>) {
-    wgpu_bencher::benchmark(
-        c,
-        &TIMER,
-        LayerNorm::new(1e-5),
-        PROB_M * PROB_N * std::mem::size_of::<f32>(),
-    )
+    let M = 2048;
+    let N = 2048;
+    let bytes_per_iter = M * N * std::mem::size_of::<f32>();
+    let tp = Throughput::Bytes(bytes_per_iter as u64);
+    wgpu_bencher::benchmark(c, &TIMER, LayerNormBench::new(M, N, 1e-5), tp)
 }
 
 criterion_group!(
