@@ -3,6 +3,7 @@ use encase::{private::WriteInto, ShaderType, UniformBuffer};
 use crate::{GPUBuffer, GPUHandle};
 
 pub const UNIFORM_ALIGN: usize = 256;
+pub const STORAGE_BUFFER_ALIGN: usize = 256;
 
 pub trait OpMetadata: Sized + ShaderType + WriteInto + std::fmt::Debug {
     fn into_buffer(&self, handle: &GPUHandle) -> GPUBuffer {

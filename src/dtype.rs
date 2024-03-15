@@ -38,6 +38,7 @@ pub enum DType {
     F32,
     I32,
     U32,
+    WQ8,
 }
 
 impl DType {
@@ -46,6 +47,7 @@ impl DType {
             DType::F32 => std::mem::size_of::<f32>(),
             DType::I32 => std::mem::size_of::<i32>(),
             DType::U32 => std::mem::size_of::<u32>(),
+            DType::WQ8 => std::mem::size_of::<u32>(),
         }
     }
 }
@@ -56,6 +58,7 @@ impl std::fmt::Display for DType {
             DType::F32 => write!(f, "f32"),
             DType::I32 => write!(f, "i32"),
             DType::U32 => write!(f, "u32"),
+            _ => unimplemented!(),
         }
     }
 }

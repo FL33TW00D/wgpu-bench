@@ -75,6 +75,12 @@ impl CPUTensor {
         Ok(Tensor::new(dt, shape, storage))
     }
 
+    pub fn to_vec<T: DataType>(&self) -> anyhow::Result<Vec<T>> {
+        let bytes = self.storage().as_bytes();
+        let data = bytemuck::cast_slice(bytes);
+        Ok(data.to_vec())
+    }
+
     pub fn from_slice<T: DataType>(data: &[T], shape: Shape) -> Self {
         assert_eq!(data.len(), shape.numel());
         let bytes: &[u8] = bytemuck::cast_slice(data);
@@ -84,7 +90,18 @@ impl CPUTensor {
         tensor
     }
 
-    pub fn rand<T: num_traits::Float + DataType + SampleUniform>(shape: Shape) -> Self {
+    pub unsafe fn from_quantized<T: DataType, U: AsRef<[T]>>(
+        data: U,
+        shape: Shape,
+        dt: DType,
+    ) -> CPUTensor {
+        let bytes: &[u8] = bytemuck::cast_slice(data.as_ref());
+        let mut tensor = Tensor::uninitialized(dt, shape, dt.size_of()).unwrap();
+        tensor.storage_mut().as_bytes_mut().copy_from_slice(bytes);
+        tensor
+    }
+
+    pub fn randn<T: num_traits::Float + DataType + SampleUniform>(shape: Shape) -> Self {
         let between = Poisson::new(11.0).unwrap();
         let mut rng: SmallRng = SeedableRng::seed_from_u64(42);
         let rand_vec = (0..shape.numel())
@@ -243,6 +260,7 @@ impl GPUTensor {
             DType::F32 => CPUTensor::from_slice::<f32>(bytemuck::cast_slice(bytes), shape),
             DType::I32 => CPUTensor::from_slice::<i32>(bytemuck::cast_slice(bytes), shape),
             DType::U32 => CPUTensor::from_slice::<u32>(bytemuck::cast_slice(bytes), shape),
+            _ => panic!("Unsupported dtype"),
         }
     }
 
