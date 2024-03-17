@@ -27,28 +27,54 @@ fn getB(d0: i32, d1: i32, d2: i32) -> f32 {
     return f32(B[getBIndexFromCoords3D(vec3<i32>(d0, d1, d2))]);
 }
    
+{% if FIT_A_OUTER and FIT_INNER %}
 fn mm_readA(batch: i32, row: i32, col: i32) -> f32 {
     var value = f32(0.0);
-    if row < metadata.aShape.y && col < metadata.aShape.z {
+    {% if TRANS_A %}
+        value = getA(batch, col, row);
+    {% else %}
         value = getA(batch, row, col);
-    }
+    {% endif %}
     return value;
 }
+{% else %}
+fn mm_readA(batch: i32, row: i32, col: i32) -> f32 {
+    var value = f32(0.0);
+    {% if TRANS_A %}
+        if (row < metadata.aShape.z && col < metadata.aShape.y) {
+            value = getA(batch, col, row);
+        }
+    {% else %}
+        if (row < metadata.aShape.y && col < metadata.aShape.z) {
+            value = getA(batch, row, col);
+        }
+    {% endif %}
+    return value;
+}
+{% endif %}
 
 fn mm_readB(batch: i32, row: i32, col: i32) -> f32 {
     var value = f32(0.0);
-    if row < metadata.bShape.y && col < metadata.bShape.z {
+    {% if TRANS_B %}
+        value = getB(batch, col, row);
+    {% else %}
         value = getB(batch, row, col);
-    }
+    {% endif %}
     return value;
 }
   
 fn mm_write(batch: i32, row: i32, col: i32, valueIn: f32) {
-    if row < metadata.outShape.y && col < metadata.outShape.z {
+{% if FIT_A_OUTER and FIT_B_OUTER %}
         var value = valueIn;
         let coords = vec3<i32>(batch, row, col);
         setOutputAtCoords(coords[0], coords[1], coords[2], value);
+{% else %}
+    if (row < metadata.dimAOuter && col < metadata.dimBOuter) {
+        var value = valueIn;
+        let coords = vec3<i32>(batch, row, col);
+        setOutputAtCoords(coords[0], coords[1], coords[2], valueIn);
     }
+{% endif %}
 }
 
 var<private> localId: vec3<u32>;
@@ -68,6 +94,8 @@ struct Meta {
     bStrides: vec3<i32>,
     outShape: vec3<i32>,
     outShapeStrides: vec3<i32>,
+    dimAOuter: i32,
+    dimBOuter: i32,
     dimInner: i32,
 }
   
@@ -86,7 +114,6 @@ fn main(@builtin(local_invocation_id) localId : vec3<u32>,
     let tileCol = i32(localId.x) * 4;
 
     let globalRowStart = i32(workgroupId.y) * 32;
-
     let globalRow = i32(globalId.y) * 4;
     let globalCol = i32(globalId.x) * 4;
 
