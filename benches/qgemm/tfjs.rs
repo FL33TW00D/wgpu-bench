@@ -19,10 +19,12 @@ lazy_static::lazy_static! {
 
 #[derive(ShaderType, derive_new::new, Debug)]
 pub struct QGEMMMeta {
-    aShape: glam::UVec3,
-    bShape: glam::UVec3,
-    outShape: glam::UVec3,
-    outShapeStrides: glam::UVec3,
+    aShape: glam::IVec3,
+    aStrides: glam::IVec3,
+    bShape: glam::IVec3,
+    bStrides: glam::IVec3,
+    outShape: glam::IVec3,
+    outStrides: glam::IVec3,
     dimInner: i32,
 }
 
@@ -95,14 +97,16 @@ impl KernelBench for QGEMMBenchmark {
     }
 
     fn metadata(&self, _: &[CPUTensor]) -> Self::Metadata {
-        let (B, M, N, K) = (self.B, self.M, self.N, self.K);
-        let meta = QGEMMMeta::new(
-            glam::UVec3::new(B as _, M as _, K as _),
-            glam::UVec3::new(B as _, K as _, N as _),
-            glam::UVec3::new(B as _, M as _, N as _),
-            glam::UVec3::new((M * N) as _, N as _, 1 as _),
-            K as _,
-        );
+        let (B, M, N, K) = (self.B as i32, self.M as i32, self.N as i32, self.K as i32);
+
+        let aShape = glam::IVec3::new(B, M, K);
+        let aStrides = glam::IVec3::new(M * K, K, 1);
+        let bShape = glam::IVec3::new(B, K, N);
+        let bStrides = glam::IVec3::new(K * N, N, 1);
+        let outShape = glam::IVec3::new(B, M, N);
+        let outStrides = glam::IVec3::new(M * N, N, 1);
+
+        let meta = QGEMMMeta::new(aShape, aStrides, bShape, bStrides, outShape, outStrides, K);
         println!("META: {:?}", meta);
         meta
     }
@@ -129,9 +133,9 @@ impl KernelBench for QGEMMBenchmark {
 
 pub fn benchmark(c: &mut Criterion<&WgpuTimer>) {
     let B = 1;
-    let M = 1024;
-    let N = 1024;
-    let K = 1024;
+    let M = 2048;
+    let N = 2048;
+    let K = 2048;
     let TILE_DIM = 32;
     let ROW_PER_THREAD = 8;
     let bench = QGEMMBenchmark::new(B, M, N, K, TILE_DIM, ROW_PER_THREAD);

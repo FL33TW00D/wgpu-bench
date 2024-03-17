@@ -104,15 +104,16 @@ var<workgroup> mm_Bsub : array<array<vec4<f32>, {{ TILE_DIM / 4 }}>, {{ TILE_DIM
 fn main(@builtin(local_invocation_id) localId : vec3<u32>,
         @builtin(global_invocation_id) globalId : vec3<u32>,
         @builtin(workgroup_id) workgroupId : vec3<u32>) {
+    let batch = i32(globalId.z);
+    let batchA = batch % metadata.aShape[0];
+    let batchB = batch % metadata.bShape[0];
+
     let localRow = i32(localId.y);
     let tileRow = localRow * {{ ROW_PER_THREAD }};
     let tileCol = i32(localId.x);
 
     let globalRow = i32(globalId.y) * {{ ROW_PER_THREAD }};
     let globalCol = i32(globalId.x) * 4;
-    let batch = i32(globalId.z);
-    let batchA = batch % metadata.aShape.x; 
-    let batchB = batch % metadata.bShape.x;
 
     let numTiles = (metadata.dimInner - 1) / {{ TILE_DIM }} + 1;
     var kStart = 0;

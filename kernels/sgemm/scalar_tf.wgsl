@@ -81,17 +81,19 @@ fn main(@builtin(local_invocation_id) localId : vec3<u32>,
     let batch = i32(globalId.z);
     let batchA = batch % metadata.aShape[0];
     let batchB = batch % metadata.bShape[0];
-    let numTiles = (metadata.dimInner - 1) / 32 + 1;
-    var kStart = 0;
-
-    var acc: array<array<f32, 4>, 4>;
 
     let tileRow = i32(localId.y) * 4;
     let tileCol = i32(localId.x) * 4;
 
+    let globalRowStart = i32(workgroupId.y) * 32;
+
     let globalRow = i32(globalId.y) * 4;
     let globalCol = i32(globalId.x) * 4;
-    let globalRowStart = i32(workgroupId.y) * 32;
+
+    let numTiles = (metadata.dimInner - 1) / 32 + 1;
+    var kStart = 0;
+
+    var acc: array<array<f32, 4>, 4>;
 
     let tileRowA = i32(localId.y) * 4;
     let tileColA = i32(localId.x) * 4;
