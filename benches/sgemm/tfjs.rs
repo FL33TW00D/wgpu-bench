@@ -17,7 +17,7 @@ lazy_static::lazy_static! {
     }));
 }
 
-#[derive(ShaderType, derive_new::new, Debug)]
+#[derive(ShaderType, Debug)]
 pub struct SGEMMMeta {
     aShape: glam::IVec3,
     aStrides: glam::IVec3,
@@ -122,13 +122,20 @@ impl KernelBench for SGEMMBenchmark {
         let outStrides = glam::IVec3::new(M * N, N, 1);
 
         let dimAOuter = if self.trans_a { K } else { M };
-        let dimBOuter = if self.trans_b { N } else { K };
+        let dimBOuter = if self.trans_b { K } else { N };
         let dimInner = if self.trans_a { M } else { K };
 
-        let meta = SGEMMMeta::new(
-            aShape, aStrides, bShape, bStrides, outShape, outStrides, dimInner, dimAOuter,
+        let meta = SGEMMMeta {
+            aShape,
+            aStrides,
+            bShape,
+            bStrides,
+            outShape,
+            outStrides,
+            dimAOuter,
             dimBOuter,
-        );
+            dimInner,
+        };
         println!("META: {:?}", meta);
         meta
     }
@@ -162,14 +169,14 @@ impl KernelBench for SGEMMBenchmark {
 
 pub fn benchmark(c: &mut Criterion<&WgpuTimer>) {
     let B = 1;
-    let M = 1024;
-    let N = 1023;
-    let K = 1024;
+    let M = 501;
+    let N = 379;
+    let K = 379;
     let TILE_DIM = 32;
     let ROW_PER_THREAD = 4;
 
     let trans_a = false;
-    let trans_b = false;
+    let trans_b = true;
 
     let bench = SGEMMBenchmark::new(B, M, N, K, TILE_DIM, ROW_PER_THREAD, trans_a, trans_b);
     let throughput = Throughput::Elements(2 * (B * M * N * K) as u64);
