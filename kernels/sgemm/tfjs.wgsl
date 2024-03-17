@@ -1,5 +1,9 @@
-fn getIndexFromCoords3D(coords : vec3<i32>, shape : vec3<i32>) -> i32 {
-    return dot(coords, vec3<i32>(shape.y * shape.z, shape.z, 1));
+fn getAIndexFromCoords3D(coords : vec3<i32>) -> i32 {
+    return dot(coords, metadata.aStrides);
+}
+
+fn getBIndexFromCoords3D(coords : vec3<i32>) -> i32 {
+    return dot(coords, metadata.bStrides);
 }
 
 fn getOutputIndexFromCoords(coords : vec3<i32>) -> i32 {
@@ -16,11 +20,11 @@ fn setOutputAtCoords(d0 : i32, d1 : i32, d2 : i32, value : vec4<f32>) {
 }
 
 fn getA(d0 : i32, d1 : i32, d2 : i32) -> vec4<f32> {
-    return vec4<f32>(A[getIndexFromCoords3D(vec3<i32>(d0,d1,d2), metadata.aShape) / 4]);
+    return vec4<f32>(A[getAIndexFromCoords3D(vec3<i32>(d0,d1,d2)) / 4]);
 }
    
 fn getB(d0 : i32, d1 : i32, d2 : i32) -> vec4<f32> {
-    return vec4<f32>(B[getIndexFromCoords3D(vec3<i32>(d0,d1,d2), metadata.bShape) / 4]);
+    return vec4<f32>(B[getBIndexFromCoords3D(vec3<i32>(d0,d1,d2)) / 4]);
 }
    
 {% if A_FIT %}
@@ -82,7 +86,9 @@ var<private> workgroupId: vec3<u32>;
 
 struct Meta {
     aShape: vec3<i32>,
+    aStrides: vec3<i32>,
     bShape: vec3<i32>,
+    bStrides: vec3<i32>,
     outShape: vec3<i32>,
     outShapeStrides: vec3<i32>,
     dimInner: i32,

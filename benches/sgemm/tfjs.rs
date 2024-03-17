@@ -19,10 +19,12 @@ lazy_static::lazy_static! {
 
 #[derive(ShaderType, derive_new::new, Debug)]
 pub struct SGEMMMeta {
-    aShape: glam::UVec3,
-    bShape: glam::UVec3,
-    outShape: glam::UVec3,
-    outShapeStrides: glam::UVec3,
+    aShape: glam::IVec3,
+    aStrides: glam::IVec3,
+    bShape: glam::IVec3,
+    bStrides: glam::IVec3,
+    outShape: glam::IVec3,
+    outStrides: glam::IVec3,
     dimInner: i32,
 }
 
@@ -48,6 +50,7 @@ impl SGEMMBenchmark {
         shape_fit[0] = aOuter % self.TILE_DIM == 0;
         shape_fit[1] = bOuter % self.TILE_DIM == 0;
         shape_fit[2] = dimInner % self.TILE_DIM == 0;
+        println!("SHAPE FIT: {:?}", shape_fit);
         shape_fit
     }
 }
@@ -62,17 +65,25 @@ impl KernelBench for SGEMMBenchmark {
     fn source(&self, workload: &Workload) -> String {
         let mut tera = tera::Tera::default();
         let mut context = tera::Context::new();
-        tera.add_raw_template(Self::name(), include_str!("../../kernels/sgemm/tfjs.wgsl"))
-            .unwrap();
+
+        let is_vec4 = (self.M % 4 == 0) && (self.N % 4 == 0) && (self.K % 4 == 0);
+        let template = if is_vec4 {
+            include_str!("../../kernels/sgemm/tfjs.wgsl")
+        } else {
+            include_str!("../../kernels/sgemm/scalar_tf.wgsl")
+        };
+        tera.add_raw_template(Self::name(), template).unwrap();
         let shape_fit = self.shape_fit();
         context.insert("A_FIT", &shape_fit[0]);
         context.insert("B_FIT", &shape_fit[1]);
-        context.insert("INNER_FIT", &shape_fit[2]);
+        context.insert("OUT_FIT", &shape_fit[2]);
 
         context.insert("TILE_DIM", &self.TILE_DIM);
         context.insert("ROW_PER_THREAD", &self.ROW_PER_THREAD);
         context.insert_workload(workload);
-        tera.render(Self::name(), &context).unwrap()
+        let kernel = tera.render(Self::name(), &context).unwrap();
+        println!("{}", kernel);
+        kernel
     }
 
     fn tensors(&self) -> Vec<CPUTensor> {
@@ -89,18 +100,22 @@ impl KernelBench for SGEMMBenchmark {
         let group_x = Workload::ceil(self.N, TILE_DIM);
         let group_y = Workload::ceil(self.M, TILE_DIM);
         let workgroup_count = wgc![group_x as _, group_y as _, self.B as u32];
-        Workload::new(workgroup_size, workgroup_count)
+        let dispatch = Workload::new(workgroup_size, workgroup_count);
+        println!("DISPATCH: {:?}", dispatch);
+        dispatch
     }
 
     fn metadata(&self, _: &[CPUTensor]) -> Self::Metadata {
-        let (B, M, N, K) = (self.B, self.M, self.N, self.K);
-        let meta = SGEMMMeta::new(
-            glam::UVec3::new(B as _, M as _, K as _),
-            glam::UVec3::new(B as _, K as _, N as _),
-            glam::UVec3::new(B as _, M as _, N as _),
-            glam::UVec3::new((M * N) as _, N as _, 1 as _),
-            K as _,
-        );
+        let (B, M, N, K) = (self.B as i32, self.M as i32, self.N as i32, self.K as i32);
+
+        let aShape = glam::IVec3::new(B, M, K);
+        let aStrides = glam::IVec3::new(M * K, K, 1);
+        let bShape = glam::IVec3::new(B, K, N);
+        let bStrides = glam::IVec3::new(K * N, N, 1);
+        let outShape = glam::IVec3::new(B, M, N);
+        let outStrides = glam::IVec3::new(M * N, N, 1);
+
+        let meta = SGEMMMeta::new(aShape, aStrides, bShape, bStrides, outShape, outStrides, K);
         println!("META: {:?}", meta);
         meta
     }
@@ -126,11 +141,11 @@ impl KernelBench for SGEMMBenchmark {
 
 pub fn benchmark(c: &mut Criterion<&WgpuTimer>) {
     let B = 1;
-    let M = 1020;
-    let N = 1024;
-    let K = 1024;
+    let M = 2047;
+    let N = 2048;
+    let K = 2048;
     let TILE_DIM = 32;
-    let ROW_PER_THREAD = 8;
+    let ROW_PER_THREAD = 4;
     let bench = SGEMMBenchmark::new(B, M, N, K, TILE_DIM, ROW_PER_THREAD);
     let throughput = Throughput::Elements(2 * (B * M * N * K) as u64);
     wgpu_bencher::benchmark(c, &TIMER, bench, throughput)
