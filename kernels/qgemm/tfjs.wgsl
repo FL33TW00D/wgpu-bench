@@ -1,5 +1,9 @@
-fn getIndexFromCoords3D(coords : vec3<i32>, shape : vec3<i32>) -> i32 {
-    return dot(coords, vec3<i32>(shape.y * shape.z, shape.z, 1));
+fn getAIndexFromCoords3D(coords : vec3<i32>) -> i32 {
+    return dot(coords, metadata.aStrides);
+}
+
+fn getBIndexFromCoords3D(coords : vec3<i32>) -> i32 {
+    return dot(coords, metadata.bStrides);
 }
 
 fn getOutputIndexFromCoords(coords : vec3<i32>) -> i32 {
@@ -16,15 +20,15 @@ fn setOutputAtCoords(d0 : i32, d1 : i32, d2 : i32, value : vec4<f32>) {
 }
 
 fn getA(d0 : i32, d1 : i32, d2 : i32) -> vec4<f32> {
-    return vec4<f32>(A[getIndexFromCoords3D(vec3<i32>(d0,d1,d2), metadata.aShape) / 4]);
+    return vec4<f32>(A[getAIndexFromCoords3D(vec3<i32>(d0,d1,d2)) / 4]);
 }
    
 fn getB(d0 : i32, d1 : i32, d2 : i32) -> vec4<f32> {
-    return unpack4x8snorm(B[getIndexFromCoords3D(vec3<i32>(d0,d1,d2), metadata.bShape) / 4]);
+    return unpack4x8snorm(B[getBIndexFromCoords3D(vec3<i32>(d0,d1,d2)) / 4]);
 }
 
 fn getAbsMax(d0 : i32, d1 : i32, d2 : i32) -> f32 {
-    let abs_index = getIndexFromCoords3D(vec3<i32>(d0,d1,d2), metadata.bShape) / 16;
+    let abs_index = getBIndexFromCoords3D(vec3<i32>(d0,d1,d2)) / 16;
     return absmax[abs_index]; 
 }
    
@@ -89,7 +93,9 @@ var<private> workgroupId: vec3<u32>;
 
 struct Meta {
     aShape: vec3<i32>,
+    aStrides: vec3<i32>,
     bShape: vec3<i32>,
+    bStrides: vec3<i32>,
     outShape: vec3<i32>,
     outShapeStrides: vec3<i32>,
     dimInner: i32,
@@ -159,7 +165,7 @@ fn main(@builtin(local_invocation_id) localId : vec3<u32>,
         workgroupBarrier();
     }
 
-    {% for innerRow in range(end=ROW_PER_THREAD) %}
+    {% for innerRow in range(end=ROW_PER_THREAD) -%}
         mm_write(batch, globalRow + {{ innerRow }}, globalCol, acc[{{ innerRow }}]);
     {% endfor %}
 }
