@@ -169,14 +169,14 @@ impl KernelBench for SGEMMBenchmark {
 
 pub fn benchmark(c: &mut Criterion<&WgpuTimer>) {
     let B = 1;
-    let M = 501;
-    let N = 379;
-    let K = 379;
+    let M = 2048;
+    let N = 2048;
+    let K = 2048;
     let TILE_DIM = 32;
-    let ROW_PER_THREAD = 4;
+    let ROW_PER_THREAD = 8;
 
     let trans_a = false;
-    let trans_b = true;
+    let trans_b = false;
 
     let bench = SGEMMBenchmark::new(B, M, N, K, TILE_DIM, ROW_PER_THREAD, trans_a, trans_b);
     let throughput = Throughput::Elements(2 * (B * M * N * K) as u64);

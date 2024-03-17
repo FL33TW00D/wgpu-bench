@@ -7,7 +7,7 @@ fn getBIndexFromCoords3D(coords : vec3<i32>) -> i32 {
 }
 
 fn getOutputIndexFromCoords(coords : vec3<i32>) -> i32 {
-  return dot(coords, metadata.outShapeStrides);
+  return dot(coords, metadata.outStrides);
 }
         
 fn setOutputAtIndex(flatIndex : i32, value : vec4<f32>) {
@@ -27,7 +27,7 @@ fn getB(d0 : i32, d1 : i32, d2 : i32) -> vec4<f32> {
     return vec4<f32>(B[getBIndexFromCoords3D(vec3<i32>(d0,d1,d2)) / 4]);
 }
    
-{% if A_FIT %}
+{% if FIT_A_OUTER and FIT_INNER %}
 fn mm_readA(batch: i32, row: i32, col: i32) -> vec4<f32> {
     var value = vec4<f32>(0.0);
     value = getA(batch, row, col);
@@ -43,29 +43,19 @@ fn mm_readA(batch: i32, row: i32, col: i32) -> vec4<f32> {
 }
 {% endif %}
 
-{% if B_FIT %}
 fn mm_readB(batch: i32, row: i32, col: i32) -> vec4<f32> {
     var value = vec4<f32>(0.0);
     value = getB(batch, row, col);
     return value;
 }
-{% else %}
-fn mm_readB(batch: i32, row: i32, col: i32) -> vec4<f32> {
-    var value = vec4<f32>(0.0);
-    if (row < metadata.bShape.y && col < metadata.bShape.z) {
-        value = getB(batch, row, col);
-    }
-    return value;
-}
-{% endif %}
   
 fn mm_write(batch: i32, row: i32, col: i32, valueIn: vec4<f32>) {
-{% if OUT_FIT %}
+{% if FIT_A_OUTER and FIT_B_OUTER %}
         var value = valueIn;
         let coords = vec3<i32>(batch, row, col);
         setOutputAtCoords(coords[0], coords[1], coords[2], value);
 {% else %}
-    if (row < metadata.outShape.y && col < metadata.outShape.z) {
+    if (row < metadata.dimAOuter && col < metadata.dimBOuter) {
         var value = valueIn;
         let coords = vec3<i32>(batch, row, col);
         setOutputAtCoords(coords[0], coords[1], coords[2], valueIn);
@@ -90,7 +80,9 @@ struct Meta {
     bShape: vec3<i32>,
     bStrides: vec3<i32>,
     outShape: vec3<i32>,
-    outShapeStrides: vec3<i32>,
+    outStrides: vec3<i32>,
+    dimAOuter: i32,
+    dimBOuter: i32,
     dimInner: i32,
 }
 
